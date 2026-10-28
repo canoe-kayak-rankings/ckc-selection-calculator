@@ -66,20 +66,12 @@ def calculate_four_boat_base(df_race_day):
     return np.nan
 
 def process_selection_rankings(df_raw, race_cols, selection_year=2026):
-    """
-    Processes selection rankings supporting year-specific rules:
-    - 2026: Excludes athletes born in 2012 or later (U14/cadets). Race 6 removed.
-      Open counts Best 3 of 5; U23/U18 counts Best 3 of 4 (drops Race 1).
-    - 2027: All categories count Best 4 of 6.
-    """
     df = normalize_columns(df_raw.copy())
     df['YOB_INT'] = df['YOB'].apply(extract_year)
     
-    # Exclude cadets / U14 (born 2012 or later) for 2026 selection rankings
     if selection_year == 2026:
         df = df[df['YOB_INT'] < 2012].copy()
     
-    # Filter out Race 6 entirely for 2026
     active_race_cols = []
     for i, rc in enumerate(race_cols):
         race_idx = i + 1
