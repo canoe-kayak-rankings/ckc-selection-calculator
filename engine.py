@@ -29,7 +29,7 @@ def normalize_columns(df):
     if 'PROVINCE' not in df_renamed.columns:
         df_renamed['PROVINCE'] = ''
     if 'YOB' not in df_renamed.columns:
-        df_renamed['YOB'] = 2000 # default fallback
+        df_renamed['YOB'] = 2000
         
     return df_renamed
 
@@ -67,13 +67,12 @@ def calculate_four_boat_base(df_race_day):
 
 def process_selection_rankings(df_raw, race_cols, selection_year=2026):
     """
-    Processes selection rankings separated by Event and automatically generates
-    Open, U23, and U18 standings based on Year of Birth (YOB) relative to selection_year.
+    Processes selection rankings separated by Event. Open ranking evaluates all athletes 
+    together in the discipline to assign official points (1st=0, 2nd=2, 3rd=3...),
+    while U23 and U18 filter subsets while maintaining official discipline rankings.
     """
     df = normalize_columns(df_raw.copy())
     df['YOB_INT'] = df['YOB'].apply(extract_year)
-    
-    # Calculate age as of Jan 1 of selection_year
     df['AGE_JAN1'] = selection_year - df['YOB_INT']
     
     event_standard_map = {
@@ -84,7 +83,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
     }
     df['EVENT'] = df['EVENT'].apply(lambda ev: event_standard_map.get(str(ev).strip().upper(), str(ev).strip().upper()))
 
-    # Calculate 4-boat base scores across all athletes per race session
     base_scores = {}
     for rc in race_cols:
         session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
@@ -96,7 +94,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
         elif rank >= 3: return rank
         return 999
 
-    # Compute PPS for all rows first
+    # Compute PPS for all rows
     for rc in race_cols:
         b_score = base_scores.get(rc, np.nan)
         pps_list = []
@@ -109,7 +107,31 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
                 pps_list.append(pps)
         df[f'{rc}_PPS'] = pps_list
 
-    # Generate results dictionary grouped by Event and Age Category
+    # First, calculate master Open points for every athlete within their event group
+    for event_name, event_group in df.groupby('EVENT'):
+        for rc in race_cols:
+            race_results = []
+            for idx, row in event_group.iterrows():
+                time_val = pd.to_numeric(row.get(rc), errors='coerce')
+                if pd.isna(time_val) or time_val >= 900:
+                    race_results.append({'idx': idx, 'time': 999, 'pts': 999})
+                else:
+                    race_results.append({'idx': idx, 'time': time_val, 'pts': np.nan})
+                    
+            valid_res = [r for r in race_results if r['pts'] != 999]
+            valid_res.sort(key=lambda x: x['time'])
+            
+            current_rank = 1
+            for i, res in enumerate(valid_res):
+                if i > 0 and valid_res[i]['time'] == valid_res[i-1]['time']:
+                    res['pts'] = valid_res[i-1]['pts']
+                else:
+                    res['pts'] = get_points_for_rank(current_rank)
+                current_rank += 1
+                
+            pts_map = {r['idx']: r['pts'] for r in valid_res}
+            df.loc[event_group.index, f'{rc}_PTS'] = [pts_map.get(idx, 999) for idx in event_group.index]
+
     categories = {
         'Open': lambda df_sub: df_sub,
         'U23': lambda df_sub: df_sub[df_sub['AGE_JAN1'] < 23],
@@ -127,31 +149,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
                 all_rankings[event_name][cat_name] = pd.DataFrame()
                 continue
                 
-            # Assign points based on rank within this event and category for each race
-            for rc in race_cols:
-                race_results = []
-                for idx, row in eg.iterrows():
-                    time_val = pd.to_numeric(row.get(rc), errors='coerce')
-                    if pd.isna(time_val) or time_val >= 900:
-                        race_results.append({'idx': idx, 'time': 999, 'pts': 999})
-                    else:
-                        race_results.append({'idx': idx, 'time': time_val, 'pts': np.nan})
-                        
-                valid_res = [r for r in race_results if r['pts'] != 999]
-                valid_res.sort(key=lambda x: x['time'])
-                
-                current_rank = 1
-                for i, res in enumerate(valid_res):
-                    if i > 0 and valid_res[i]['time'] == valid_res[i-1]['time']:
-                        res['pts'] = valid_res[i-1]['pts']
-                    else:
-                        res['pts'] = get_points_for_rank(current_rank)
-                    current_rank += 1
-                    
-                pts_map = {r['idx']: r['pts'] for r in valid_res}
-                eg[f'{rc}_PTS'] = [pts_map.get(idx, 999) for idx in eg.index]
-
-            # Best 4 of 6 calculation
             total_points = []
             avg_best4_pps = []
             
