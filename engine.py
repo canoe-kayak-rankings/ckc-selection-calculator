@@ -66,12 +66,11 @@ def process_selection_rankings(df_raw, race_cols, age_category_filter=None):
     """
     df = normalize_columns(df_raw)
     
-    # Standardize event names to MK1, WK1, MC1, WC1
     event_standard_map = {
-        'K1M': 'MK1', "MEN'S K1": 'MK1', "MEN'S KAYAK": 'MK1': 'MK1',
-        'K1W': 'WK1', "WOMEN'S K1": 'WK1', "WOMEN'S KAYAK": 'WK1': 'WK1',
-        'C1M': 'MC1', "MEN'S C1": 'MC1', "MEN'S CANOE": 'MC1': 'MC1',
-        'C1W': 'WC1', "WOMEN'S C1": 'WC1', "WOMEN'S CANOE": 'WC1': 'WC1'
+        'K1M': 'MK1', "MEN'S K1": 'MK1', "MEN'S KAYAK": 'MK1',
+        'K1W': 'WK1', "WOMEN'S K1": 'WK1', "WOMEN'S KAYAK": 'WK1',
+        'C1M': 'MC1', "MEN'S C1": 'MC1', "MEN'S CANOE": 'MC1',
+        'C1W': 'WC1', "WOMEN'S C1": 'WC1', "WOMEN'S CANOE": 'WC1'
     }
     
     def standardize_event(ev):
@@ -80,7 +79,6 @@ def process_selection_rankings(df_raw, race_cols, age_category_filter=None):
         
     df['EVENT'] = df['EVENT'].apply(standardize_event)
     
-    # Filter by age category if specified
     if age_category_filter and age_category_filter.lower() not in ['senior', 'all', 'open']:
         df = df[df['CATEGORY'].str.strip().str.upper() == age_category_filter.upper()].copy()
         
@@ -96,13 +94,11 @@ def process_selection_rankings(df_raw, race_cols, age_category_filter=None):
             return rank
         return 999
 
-    # 1. Calculate 4-Boat base scores for each race session across all athletes
     base_scores = {}
     for rc in race_cols:
         session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
         base_scores[rc] = calculate_four_boat_base(session_df)
         
-    # 2. Compute PPS and Points grouped separately by EVENT
     processed_dfs = []
     
     for event_name, event_group in df.groupby('EVENT'):
@@ -121,7 +117,6 @@ def process_selection_rankings(df_raw, race_cols, age_category_filter=None):
                     pps = (time_val / b_score) * 100 if pd.notna(b_score) and b_score > 0 else np.nan
                     race_results.append({'idx': idx, 'time': time_val, 'pps': pps, 'pts': np.nan})
                     
-            # Rank strictly within this EVENT group
             valid_res = [r for r in race_results if r['pts'] != 999]
             valid_res.sort(key=lambda x: x['time'])
             
@@ -141,7 +136,6 @@ def process_selection_rankings(df_raw, race_cols, age_category_filter=None):
             eg[f'{rc}_PTS'] = [pts_map.get(idx, 999) for idx in eg.index]
             eg[f'{rc}_PPS'] = [pps_map.get(idx, np.nan) for idx in eg.index]
 
-        # Best 4 of 6 calculation per athlete within this event
         total_points = []
         avg_best4_pps = []
         
@@ -164,14 +158,12 @@ def process_selection_rankings(df_raw, race_cols, age_category_filter=None):
         eg['TOTAL_POINTS'] = total_points
         eg['AVG_BEST4_PPS'] = avg_best4_pps
         
-        # Rank within event
         eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
         eg['RANK'] = range(1, len(eg) + 1)
         processed_dfs.append(eg)
         
     if processed_dfs:
         final_df = pd.concat(processed_dfs, ignore_index=True)
-        # Sort overall by event then rank
         final_df = final_df.sort_values(by=['EVENT', 'RANK']).reset_index(drop=True)
         return final_df
     return pd.DataFrame()
