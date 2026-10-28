@@ -68,11 +68,16 @@ def calculate_four_boat_base(df_race_day):
 def process_selection_rankings(df_raw, race_cols, selection_year=2026):
     """
     Processes selection rankings supporting year-specific rules:
-    - 2026: Race 6 is removed entirely. Open counts Best 3 of 5; U23/U18 counts Best 3 of 4 (drops Race 1).
+    - 2026: Excludes athletes born in 2012 or later (U14/cadets). Race 6 removed.
+      Open counts Best 3 of 5; U23/U18 counts Best 3 of 4 (drops Race 1).
     - 2027: All categories count Best 4 of 6.
     """
     df = normalize_columns(df_raw.copy())
     df['YOB_INT'] = df['YOB'].apply(extract_year)
+    
+    # Exclude cadets / U14 (born 2012 or later) for 2026 selection rankings
+    if selection_year == 2026:
+        df = df[df['YOB_INT'] < 2012].copy()
     
     # Filter out Race 6 entirely for 2026
     active_race_cols = []
@@ -92,7 +97,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
 
     base_scores = {}
     for rc in active_race_cols:
-        session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
+        session_df = df[['EVENT', rc']].rename(columns={rc: 'TIME'})
         base_scores[rc] = calculate_four_boat_base(session_df)
 
     def get_points_for_rank(rank):
@@ -101,7 +106,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
         elif rank >= 3: return rank
         return 999
 
-    # Compute PPS for active races
     for rc in active_race_cols:
         b_score = base_scores.get(rc, np.nan)
         pps_list = []
@@ -114,7 +118,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
                 pps_list.append(pps)
         df[f'{rc}_PPS'] = pps_list
 
-    # Compute master Open points per event group
     for event_name, event_group in df.groupby('EVENT'):
         for rc in active_race_cols:
             race_results = []
@@ -173,7 +176,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
                 for rc in active_race_cols:
                     race_orig_idx = race_cols.index(rc) + 1
                     if selection_year == 2026 and cat_name in ['U23', 'U18'] and race_orig_idx == 1:
-                        continue # Skip Race 1 for U23/Junior in 2026
+                        continue 
                         
                     r_pts.append(row[f'{rc}_PTS'])
                     r_pps.append(row[f'{rc}_PPS'])
