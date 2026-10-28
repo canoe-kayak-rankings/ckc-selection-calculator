@@ -69,9 +69,11 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
     df = normalize_columns(df_raw.copy())
     df['YOB_INT'] = df['YOB'].apply(extract_year)
     
+    # Exclude cadets / U14 (born 2012 or later) for 2026 selection rankings
     if selection_year == 2026:
         df = df[df['YOB_INT'] < 2012].copy()
     
+    # Filter out Race 6 entirely for 2026
     active_race_cols = []
     for i, rc in enumerate(race_cols):
         race_idx = i + 1
@@ -89,7 +91,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
 
     base_scores = {}
     for rc in active_race_cols:
-        session_df = df[['EVENT', rc']].rename(columns={rc: 'TIME'})
+        session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
         base_scores[rc] = calculate_four_boat_base(session_df)
 
     def get_points_for_rank(rank):
