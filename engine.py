@@ -94,7 +94,7 @@ def load_mps_lookup(target_file):
                     except:
                         pass
     except Exception as e:
-        print(f"Could not load MPS sheet: {e}")
+        print(f"Could not load MPS sheet: {e})")
         
     return mps_dict, status
 
@@ -103,6 +103,19 @@ def get_points_for_rank(rank):
     elif rank == 2: return 2
     elif rank >= 3: return rank
     return 999
+
+def has_50s_penalty(row, rc):
+    """
+    Checks if a 50-second penalty flag is present for this race column.
+    Looks for companion columns like '{rc}_PEN50', '{rc}_FLAG', or checks if the value itself is flagged.
+    """
+    for col_suffix in ['_PEN50', '_PEN', '_FLAG']:
+        flag_col = f"{rc}{col_suffix}"
+        if flag_col in row and pd.notna(row[flag_col]):
+            val = str(row[flag_col]).strip().upper()
+            if val in ['50', 'Y', 'YES', 'TRUE', 'PEN50', 'X']:
+                return True
+    return False
 
 def calculate_race_day_base_details(df_all_events, day_race_cols):
     disciplines = ['MK1', 'WK1', 'MC1', 'WC1']
@@ -121,6 +134,10 @@ def calculate_race_day_base_details(df_all_events, day_race_cols):
         valid_recs = []
         for _, r in disc_rows.iterrows():
             for rc in day_race_cols:
+                # Exclude from 4-boat base calculation if a 50s penalty is flagged
+                if has_50s_penalty(r, rc):
+                    continue
+                    
                 t = pd.to_numeric(r.get(rc), errors='coerce')
                 if pd.notna(t) and t < 900:
                     valid_recs.append({'athlete': r.get('ATHLETE', 'Unknown'), 'time': t, 'race_col': rc})
@@ -291,7 +308,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
             
             eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
             eg['RANK'] = range(1, len(eg) + 1)
-            # Store with standard key name
             display_cat_name = 'Open' if cat_name == 'OPEN' else cat_name
             all_rankings[event_name][display_cat_name] = eg
 
