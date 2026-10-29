@@ -91,9 +91,8 @@ else:
                 # Render Individual Event Tabs
                 for idx, evt_name in enumerate(events_list):
                     with event_tabs[idx]:
-                        st.subheader(f"{selected_year} - {evt_name} Team Selection Standings")
-                        
-                        st.markdown("### 📈 4-Boat Base Score Breakdown (MK1, WK1, MC1, WC1)")
+                        # Render 4-Boat Base Score Breakdown Report Table first
+                        st.markdown("### 4-Boat Base Score Breakdown (MK1, WK1, MC1, WC1)")
                         base_table_data = []
                         
                         active_races_to_show = []
@@ -120,6 +119,9 @@ else:
                             st.dataframe(pd.DataFrame(base_table_data), hide_index=True, use_container_width=True)
                         
                         st.markdown("---")
+                        
+                        # Now show the Team Selection Standings subheader below the 4-boat table
+                        st.subheader(f"{selected_year} - {evt_name} Team Selection Standings")
                         
                         if is_official:
                             st.success("✅ **OFFICIAL SELECTION RANKINGS**: Approved and ratified by the Slalom High Performance Committee.")
