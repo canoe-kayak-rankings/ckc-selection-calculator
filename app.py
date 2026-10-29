@@ -142,7 +142,7 @@ else:
                                     race_time_cols = active_races_to_show
                                     pps_cols = [f"{rc}_PPS" for rc in active_races_to_show if f"{rc}_PPS" in df_cat.columns]
                                     
-                                    display_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB_INT', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + race_time_cols + pps_cols
+                                    display_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + race_time_cols + pps_cols
                                     available_disp = [c for c in display_cols if c in df_cat.columns]
                                     
                                     cat_mps_val = mps_dict.get((evt_name.upper(), cat_name.upper()), 105.0)
@@ -212,7 +212,7 @@ else:
                                 else:
                                     st.info(f"No eligible athletes found for {evt_name} in category {cat_name}.")
 
-                # Render "Nominations Summary" Tab (Without Status/Notes Column)
+                # Render "Nominations Summary" Tab
                 with event_tabs[-1]:
                     st.subheader(f"{selected_year} National Team Nominations Summary")
                     
@@ -244,7 +244,7 @@ else:
                                         "Rank": row['RANK'],
                                         "Athlete": row['ATHLETE'],
                                         "Province": row['PROVINCE'],
-                                        "YOB": row['YOB_INT'],
+                                        "YOB": row['YOB'],
                                         "Total Points": row['TOTAL_POINTS'],
                                         "MPS Satisfied": row['MPS_SATISFIED_COUNT']
                                     })
@@ -260,7 +260,7 @@ else:
                                                 "Rank": f"Alt ({alt_row['RANK']})",
                                                 "Athlete": alt_row['ATHLETE'],
                                                 "Province": alt_row['PROVINCE'],
-                                                "YOB": alt_row['YOB_INT'],
+                                                "YOB": alt_row['YOB'],
                                                 "Total Points": alt_row['TOTAL_POINTS'],
                                                 "MPS Satisfied": alt_row['MPS_SATISFIED_COUNT']
                                             })
