@@ -105,7 +105,7 @@ else:
                             b_val = base_scores.get(rc, np.nan)
                             details = base_breakdowns.get(rc, {})
                             
-                            row_data = {"Race Session": rc, "4-Boat Base Score": f"{b_val:.3f}" if pd.notna(b_val) else "N/A"}
+                            row_data = {"Race Session": rc, "4-Boat Base Score": f"{b_val:.2f}" if pd.notna(b_val) else "N/A"}
                             for disc in ['MK1', 'WK1', 'MC1', 'WC1']:
                                 d_info = details.get(disc)
                                 if d_info:
