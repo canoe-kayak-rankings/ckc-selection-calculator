@@ -44,25 +44,6 @@ def extract_year(val):
     except:
         return 2000
 
-def calculate_four_boat_base(df_race_day):
-    lowest_times = {}
-    event_alias = {
-        'MK1': ['MK1', 'K1M', "MEN'S K1", "MEN'S KAYAK"],
-        'WK1': ['WK1', 'K1W', "WOMEN'S K1", "WOMEN'S KAYAK"],
-        'MC1': ['MC1', 'C1M', "MEN'S C1", "MEN'S CANOE"],
-        'WC1': ['WC1', 'C1W', "WOMEN'S C1", "WOMEN'S CANOE"]
-    }
-    
-    for std_disc, aliases in event_alias.items():
-        disc_rows = df_race_day[df_race_day['EVENT'].str.strip().str.upper().isin([a.upper() for a in aliases])]
-        valid_times = pd.to_numeric(disc_rows['TIME'], errors='coerce').dropna()
-        lowest_times[std_disc] = valid_times.min() if not valid_times.empty else np.nan
-        
-    valid_vals = [v for v in lowest_times.values() if pd.notna(v) and v > 0]
-    if len(valid_vals) == 4:
-        return round(sum(valid_vals) / 4.0, 3)
-    return np.nan
-
 def load_mps_lookup(target_file):
     mps_dict = {}
     status = "UNOFFICIAL"
@@ -120,6 +101,42 @@ def get_points_for_rank(rank):
     elif rank >= 3: return rank
     return 999
 
+def calculate_four_boat_base_details(df_all_events, rc):
+    """
+    Computes the 4-boat base score for a given race column by taking the fastest valid time 
+    from each of the four standard disciplines (MK1, WK1, MC1, WC1) and averaging them.
+    Returns the base score and a breakdown table of contributing athletes/times.
+    """
+    disciplines = ['MK1', 'WK1', 'MC1', 'WC1']
+    alias_map = {
+        'MK1': ['MK1', 'K1M', "MEN'S K1", "MEN'S KAYAK"],
+        'WK1': ['WK1', 'K1W', "WOMEN'S K1", "WOMEN'S KAYAK"],
+        'MC1': ['MC1', 'C1M', "MEN'S C1", "MEN'S CANOE"],
+        'WC1': ['WC1', 'C1W', "WOMEN'S C1", "WOMEN'S CANOE"]
+    }
+    
+    disc_best = {}
+    for disc in disciplines:
+        aliases = alias_map[disc]
+        disc_rows = df_all_events[df_all_events['EVENT'].str.strip().str.upper().isin([a.upper() for a in aliases])]
+        
+        valid_recs = []
+        for _, r in disc_rows.iterrows():
+            t = pd.to_numeric(r.get(rc), errors='coerce')
+            if pd.notna(t) and t < 900:
+                valid_recs.append({'athlete': r.get('ATHLETE', 'Unknown'), 'time': t, 'event': r.get('EVENT', disc)})
+                
+        if valid_recs:
+            valid_recs.sort(key=lambda x: x['time'])
+            disc_best[disc] = valid_recs[0]
+        else:
+            disc_best[disc] = None
+            
+    times = [v['time'] for v in disc_best.values() if v is not None]
+    base_score = round(sum(times) / len(times), 3) if len(times) == 4 else np.nan
+    
+    return base_score, disc_best
+
 def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=None):
     df = normalize_columns(df_raw.copy())
     df['YOB_INT'] = df['YOB'].apply(extract_year)
@@ -138,20 +155,25 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
         'K1M': 'MK1', "MEN'S K1": 'MK1', "MEN'S KAYAK": 'MK1',
         'K1W': 'WK1', "WOMEN'S K1": 'WK1', "WOMEN'S KAYAK": 'WK1',
         'C1M': 'MC1', "MEN'S C1": 'MC1', "MEN'S CANOE": 'MC1',
-        'C1W': 'WC1', "WOMEN'S C1": 'WC1', "WOMEN'S CANOE": 'WC1'
+        'C1W': 'WC1', "WOMEN'S C1": 'WC1', "WOMEN'S CANOE': 'WC1'
     }
     df['EVENT'] = df['EVENT'].apply(lambda ev: event_standard_map.get(str(ev).strip().upper(), str(ev).strip().upper()))
 
     for rc in active_race_cols:
         df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
 
+    # Compute 4-boat base scores and breakdowns for each active race column
     base_scores = {}
+    base_breakdowns = {}
     for rc in active_race_cols:
-        session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
-        base_scores[rc] = calculate_four_boat_base(session_df)
+        b_score, b_details = calculate_four_boat_base_details(df, rc)
+        base_scores[rc] = b_score
+        base_breakdowns[rc] = b_details
 
+    # Calculate PPS for all athletes
     for rc in active_race_cols:
         b_score = base_scores.get(rc, np.nan)
+        pps_col = f'{rc}_PPS'
         pps_list = []
         for _, row in df.iterrows():
             time_val = pd.to_numeric(row.get(rc), errors='coerce')
@@ -160,7 +182,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
             else:
                 pps = (time_val / b_score) * 100 if pd.notna(b_score) and b_score > 0 else np.nan
                 pps_list.append(round(pps, 3))
-        df[f'{rc}_PPS'] = pps_list
+        df[pps_col] = pps_list
 
     if selection_year == 2026:
         categories = {
@@ -259,5 +281,9 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
             eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
             eg['RANK'] = range(1, len(eg) + 1)
             all_rankings[event_name][cat_name] = eg
+
+    # Attach base scores and breakdowns metadata to return dictionary
+    all_rankings['_BASE_SCORES'] = base_scores
+    all_rankings['_BASE_BREAKDOWNS'] = base_breakdowns
 
     return all_rankings
