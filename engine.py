@@ -102,11 +102,6 @@ def get_points_for_rank(rank):
     return 999
 
 def calculate_four_boat_base_details(df_all_events, rc):
-    """
-    Computes the 4-boat base score for a given race column by taking the fastest valid time 
-    from each of the four standard disciplines (MK1, WK1, MC1, WC1) and averaging them.
-    Returns the base score and a breakdown table of contributing athletes/times.
-    """
     disciplines = ['MK1', 'WK1', 'MC1', 'WC1']
     alias_map = {
         'MK1': ['MK1', 'K1M', "MEN'S K1", "MEN'S KAYAK"],
@@ -155,14 +150,13 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
         'K1M': 'MK1', "MEN'S K1": 'MK1', "MEN'S KAYAK": 'MK1',
         'K1W': 'WK1', "WOMEN'S K1": 'WK1', "WOMEN'S KAYAK": 'WK1',
         'C1M': 'MC1', "MEN'S C1": 'MC1', "MEN'S CANOE": 'MC1',
-        'C1W': 'WC1', "WOMEN'S C1": 'WC1', "WOMEN'S CANOE': 'WC1'
+        'C1W': 'WC1', "WOMEN'S C1": 'WC1', "WOMEN'S CANOE": 'WC1'
     }
     df['EVENT'] = df['EVENT'].apply(lambda ev: event_standard_map.get(str(ev).strip().upper(), str(ev).strip().upper()))
 
     for rc in active_race_cols:
         df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
 
-    # Compute 4-boat base scores and breakdowns for each active race column
     base_scores = {}
     base_breakdowns = {}
     for rc in active_race_cols:
@@ -170,7 +164,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
         base_scores[rc] = b_score
         base_breakdowns[rc] = b_details
 
-    # Calculate PPS for all athletes
     for rc in active_race_cols:
         b_score = base_scores.get(rc, np.nan)
         pps_col = f'{rc}_PPS'
@@ -282,7 +275,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
             eg['RANK'] = range(1, len(eg) + 1)
             all_rankings[event_name][cat_name] = eg
 
-    # Attach base scores and breakdowns metadata to return dictionary
     all_rankings['_BASE_SCORES'] = base_scores
     all_rankings['_BASE_BREAKDOWNS'] = base_breakdowns
 
