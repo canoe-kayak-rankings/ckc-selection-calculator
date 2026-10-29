@@ -7,7 +7,7 @@ from engine import process_selection_rankings, load_mps_lookup
 
 st.set_page_config(
     page_title="CKC National Team Selection Calculator",
-    page_icon="🚣",
+    page_icon="🇨🇦",
     layout="wide"
 )
 
@@ -43,14 +43,12 @@ else:
             else:
                 df_raw = pd.read_csv(target_file)
                 
-            # Automated behind-the-scenes detection of 6 selection race columns
             potential_keywords = ['RACE', 'RUN', 'MH', 'OKC', 'DAY', 'SESSION']
             detected_races = [
                 c for c in df_raw.columns 
                 if any(k in str(c).upper() for k in potential_keywords) and 'RANK' not in str(c).upper() and 'PTS' not in str(c).upper()
             ]
             
-            # Fallback if specific keywords aren't found: take up to 6 numeric or trailing columns
             if len(detected_races) >= 6:
                 selected_races = detected_races[:6]
             elif len(df_raw.columns) >= 6:
@@ -87,13 +85,15 @@ else:
             
             events_list = sorted([k for k in rankings_dict.keys() if not k.startswith('_')])
             if events_list:
-                event_tabs = st.tabs([f"🚣 {evt}" for evt in events_list])
+                # Create tabs for events PLUS the summary nominations tab on the right
+                tabs_labels = [evt for evt in events_list] + ["📋 Nominations Summary"]
+                event_tabs = st.tabs(tabs_labels)
                 
-                for evt_name, evt_tab in zip(events_list, event_tabs):
-                    with evt_tab:
+                # Render Individual Event Tabs
+                for idx, evt_name in enumerate(events_list):
+                    with event_tabs[idx]:
                         st.subheader(f"{selected_year} - {evt_name} Team Selection Standings")
                         
-                        # Render 4-Boat Base Score Breakdown Report Table (Grouped by Race Day)
                         st.markdown("### 📈 4-Boat Base Score Breakdown (MK1, WK1, MC1, WC1)")
                         base_table_data = []
                         
@@ -127,11 +127,11 @@ else:
                         else:
                             st.warning("⚠️ **UNOFFICIAL / PRELIMINARY DRAFT**: Subject to review and pending final approval by the Slalom High Performance Committee.")
                         
-                        cat_tabs = st.tabs(["🏆 Open (Senior)", "🥈 U23", "🥉 U18 (Junior)"])
+                        cat_tabs = st.tabs(["Open (Senior)", "U23", "U18 (Junior)"])
                         categories = ['Open', 'U23', 'U18']
                         
-                        for cat_name, cat_tab in zip(categories, cat_tabs):
-                            with cat_tab:
+                        for cat_idx, cat_name in enumerate(categories):
+                            with cat_tabs[cat_idx]:
                                 df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
                                 
                                 if not df_cat.empty:
@@ -163,11 +163,16 @@ else:
                                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
                                     st.caption(f"🟢 Highlighted cells indicate individual selection races satisfying the {cat_name} {evt_name} MPS threshold (≤ {cat_mps_val:.3f}%).")
                                     
-                                    top_3 = df_cat.head(3)
+                                    # Filter top 3 strictly by MPS satisfaction count >= 1
+                                    valid_nominees = df_cat[df_cat['MPS_SATISFIED_COUNT'] > 0].head(3)
                                     status_label = "Official" if is_official else "Provisional"
-                                    st.markdown(f"**🌟 {status_label} Top 3 Nominations ({evt_name} - {cat_name}):**")
-                                    for _, row in top_3.iterrows():
-                                        st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {row['AVG_BEST4_PPS']:.2f}%")
+                                    st.markdown(f"**{status_label} Top 3 Nominations ({evt_name} - {cat_name}):**")
+                                    
+                                    if not valid_nominees.empty:
+                                        for _, row in valid_nominees.iterrows():
+                                            st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {row['AVG_BEST4_PPS']:.2f}%")
+                                    else:
+                                        st.info("No athletes in this category met the minimum MPS satisfaction requirement for nomination.")
                                         
                                     file_status_tag = "OFFICIAL" if is_official else "UNOFFICIAL"
                                     csv_filename = f"CKC_{selected_year}_{evt_name}_{cat_name}_{file_status_tag}_rankings.csv"
@@ -182,6 +187,48 @@ else:
                                     )
                                 else:
                                     st.info(f"No eligible athletes found for {evt_name} in category {cat_name}.")
+
+                # Render "Nominations Summary" Tab
+                with event_tabs[-1]:
+                    st.subheader(f"📋 {selected_year} National Team Nominations Summary")
+                    st.markdown("Comprehensive overview of all top 3 nominated athletes across events and age categories who have satisfied the minimum MPS threshold.")
+                    
+                    summary_rows = []
+                    categories = ['Open', 'U23', 'U18']
+                    
+                    for evt_name in events_list:
+                        for cat_name in categories:
+                            df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
+                            if not df_cat.empty:
+                                valid_nominees = df_cat[df_cat['MPS_SATISFIED_COUNT'] > 0].head(3)
+                                for _, row in valid_nominees.iterrows():
+                                    summary_rows.append({
+                                        "Event": evt_name,
+                                        "Category": cat_name,
+                                        "Rank": row['RANK'],
+                                        "Athlete": row['ATHLETE'],
+                                        "Province": row['PROVINCE'],
+                                        "YOB": row['YOB_INT'],
+                                        "Total Points": row['TOTAL_POINTS'],
+                                        "MPS Satisfied": row['MPS_SATISFIED_COUNT'],
+                                        "Avg PPS (%)": f"{row['AVG_BEST4_PPS']:.2f}%" if pd.notna(row['AVG_BEST4_PPS']) else "-"
+                                    })
+                                    
+                    if summary_rows:
+                        df_summary = pd.DataFrame(summary_rows)
+                        st.dataframe(df_summary, use_container_width=True, hide_index=True)
+                        
+                        file_status_tag = "OFFICIAL" if is_official else "UNOFFICIAL"
+                        summary_csv = df_summary.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label=f"📥 Download All Nominations Summary Report ({file_status_tag})",
+                            data=summary_csv,
+                            file_name=f"CKC_{selected_year}_All_Nominations_Summary_{file_status_tag}.csv",
+                            mime="text/csv",
+                            key="dl_all_nominations_summary"
+                        )
+                    else:
+                        st.info("No athletes met the criteria for nomination across any events.")
             else:
                 st.warning("No valid event columns found in dataset.")
                         
