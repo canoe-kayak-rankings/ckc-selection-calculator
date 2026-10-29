@@ -71,14 +71,39 @@ else:
                         st.warning("🔴 UNOFFICIAL (Draft)")
 
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
+                base_scores = rankings_dict.get('_BASE_SCORES', {})
+                base_breakdowns = rankings_dict.get('_BASE_BREAKDOWNS', {})
                 
-                events_list = sorted(list(rankings_dict.keys()))
+                events_list = sorted([k for k in rankings_dict.keys() if not k.startswith('_')])
                 if events_list:
                     event_tabs = st.tabs([f"🚣 {evt}" for evt in events_list])
                     
                     for evt_name, evt_tab in zip(events_list, event_tabs):
                         with evt_tab:
                             st.subheader(f"{selected_year} - {evt_name} Team Selection Standings")
+                            
+                            # Render 4-Boat Base Score Breakdown Report Table
+                            st.markdown("### 📈 4-Boat Base Score Breakdown (MK1, WK1, MC1, WC1)")
+                            base_table_data = []
+                            for rc in selected_races:
+                                if selection_year == 2026 and selected_races.index(rc) + 1 == 6:
+                                    continue
+                                b_val = base_scores.get(rc, np.nan)
+                                details = base_breakdowns.get(rc, {})
+                                
+                                row_data = {"Race Session": rc, "4-Boat Base Score": f"{b_val:.3f}" if pd.notna(b_val) else "N/A"}
+                                for disc in ['MK1', 'WK1', 'MC1', 'WC1']:
+                                    d_info = details.get(disc)
+                                    if d_info:
+                                        row_data[disc] = f"{d_info['athlete']} ({d_info['time']:.2f}s)"
+                                    else:
+                                        row_data[disc] = "No Time"
+                                base_table_data.append(row_data)
+                                
+                            if base_table_data:
+                                st.dataframe(pd.DataFrame(base_table_data), hide_index=True, use_container_width=True)
+                            
+                            st.markdown("---")
                             
                             if is_official:
                                 st.success("✅ **OFFICIAL SELECTION RANKINGS**: Approved and ratified by the Slalom High Performance Committee.")
@@ -111,8 +136,6 @@ else:
                                             return ''
 
                                         pps_subset = [c for c in pps_cols if c in available_disp]
-                                        
-                                        # Format float columns to 2 decimal places for clean display
                                         format_dict = {col: "{:.2f}" for col in race_time_cols + pps_subset + ['AVG_BEST4_PPS']}
                                         
                                         styled_df = df_cat[available_disp].style.map(
@@ -137,7 +160,7 @@ else:
                                             label=f"📥 Download {selected_year} {evt_name} {cat_name} Report ({file_status_tag})",
                                             data=csv_data,
                                             file_name=csv_filename,
-                                            mime="text/csv",
+                                            mime="text/css",
                                             key=f"dl_{evt_name}_{cat_name}_{selected_year}_{file_status_tag}"
                                         )
                                     else:
