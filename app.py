@@ -52,7 +52,7 @@ else:
                 # Load MPS thresholds from Excel 'MPS' sheet and format as percentages
                 mps_dict = load_mps_lookup(target_file)
                 
-                # Render Sidebar MPS Summary ONCE here
+                # Render Sidebar MPS Summary and Status Toggle
                 with st.sidebar:
                     st.subheader(f"📊 {selected_year} MPS Standards")
                     if mps_dict:
@@ -63,17 +63,15 @@ else:
                         st.dataframe(mps_df_display, hide_index=True, use_container_width=True)
                     else:
                         st.info("No 'MPS' sheet found in Excel workbook.")
-                        # Inside your sidebar setup in app.py:
-with st.sidebar:
-    st.markdown("---")
-    st.subheader("📌 Results Status")
-    results_status = st.radio(
-        "Set Publication Status", 
-        ["🔴 UNOFFICIAL (Draft)", "🟢 OFFICIAL (Approved by HP Committee)"],
-        index=0
-    )
-    
-    is_official = "OFFICIAL" in results_status
+                        
+                    st.markdown("---")
+                    st.subheader("📌 Publication Status")
+                    results_status = st.radio(
+                        "Set Results Status", 
+                        ["🔴 UNOFFICIAL (Draft)", "🟢 OFFICIAL (Approved)"],
+                        index=0
+                    )
+                    is_official = "OFFICIAL" in results_status
 
                 # Process rankings dictionary
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
@@ -85,6 +83,12 @@ with st.sidebar:
                     for evt_name, evt_tab in zip(events_list, event_tabs):
                         with evt_tab:
                             st.subheader(f"{selected_year} - {evt_name} Team Selection Standings")
+                            
+                            # Display status banner at the top of the standings
+                            if is_official:
+                                st.success("✅ **OFFICIAL SELECTION RANKINGS**: Approved and ratified by the Slalom High Performance Committee.")
+                            else:
+                                st.warning("⚠️ **UNOFFICIAL / PRELIMINARY DRAFT**: Subject to review and pending final approval by the Slalom High Performance Committee.")
                             
                             cat_tabs = st.tabs(["🏆 Open (Senior)", "🥈 U23", "🥉 U18 (Junior)"])
                             categories = ['Open', 'U23', 'U18']
@@ -118,17 +122,21 @@ with st.sidebar:
                                         
                                         # Top 3 nominations
                                         top_3 = df_cat.head(3)
-                                        st.markdown(f"**🌟 Provisional Top 3 Nominations ({evt_name} - {cat_name}):**")
+                                        status_label = "Official" if is_official else "Provisional"
+                                        st.markdown(f"**🌟 {status_label} Top 3 Nominations ({evt_name} - {cat_name}):**")
                                         for _, row in top_3.iterrows():
                                             st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {row['AVG_BEST4_PPS']:.2f}%")
                                             
+                                        file_status_tag = "OFFICIAL" if is_official else "UNOFFICIAL"
+                                        csv_filename = f"CKC_{selected_year}_{evt_name}_{cat_name}_{file_status_tag}_rankings.csv"
+                                        
                                         csv_data = df_cat[available_disp].to_csv(index=False).encode('utf-8')
                                         st.download_button(
-                                            label=f"📥 Download {selected_year} {evt_name} {cat_name} Report (CSV)",
+                                            label=f"📥 Download {selected_year} {evt_name} {cat_name} Report ({file_status_tag})",
                                             data=csv_data,
-                                            file_name=f"CKC_{selected_year}_{evt_name}_{cat_name}_rankings.csv",
+                                            file_name=csv_filename,
                                             mime="text/csv",
-                                            key=f"dl_{evt_name}_{cat_name}_{selected_year}"
+                                            key=f"dl_{evt_name}_{cat_name}_{selected_year}_{file_status_tag}"
                                         )
                                     else:
                                         st.info(f"No eligible athletes found for {evt_name} in category {cat_name}.")
