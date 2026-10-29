@@ -71,7 +71,7 @@ else:
                         ["🔴 UNOFFICIAL (Draft)", "🟢 OFFICIAL (Approved)"],
                         index=0
                     )
-                    is_official = "OFFICIAL" in results_status
+                 is_official = "🟢 OFFICIAL" in results_status
 
                 # Process rankings dictionary
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
