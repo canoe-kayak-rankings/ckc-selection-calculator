@@ -63,6 +63,17 @@ else:
                         st.dataframe(mps_df_display, hide_index=True, use_container_width=True)
                     else:
                         st.info("No 'MPS' sheet found in Excel workbook.")
+                        # Inside your sidebar setup in app.py:
+with st.sidebar:
+    st.markdown("---")
+    st.subheader("📌 Results Status")
+    results_status = st.radio(
+        "Set Publication Status", 
+        ["🔴 UNOFFICIAL (Draft)", "🟢 OFFICIAL (Approved by HP Committee)"],
+        index=0
+    )
+    
+    is_official = "OFFICIAL" in results_status
 
                 # Process rankings dictionary
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
