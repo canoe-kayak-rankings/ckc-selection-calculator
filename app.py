@@ -85,8 +85,7 @@ else:
             
             events_list = sorted([k for k in rankings_dict.keys() if not k.startswith('_')])
             if events_list:
-                # Create tabs for events PLUS the summary nominations tab on the right
-                tabs_labels = [evt for evt in events_list] + ["📋 Nominations Summary"]
+                tabs_labels = [evt for evt in events_list] + ["Nominations Summary"]
                 event_tabs = st.tabs(tabs_labels)
                 
                 # Render Individual Event Tabs
@@ -127,7 +126,7 @@ else:
                         else:
                             st.warning("⚠️ **UNOFFICIAL / PRELIMINARY DRAFT**: Subject to review and pending final approval by the Slalom High Performance Committee.")
                         
-                        cat_tabs = st.tabs(["Open (Senior)", "U23", "U18 (Junior)"])
+                        cat_tabs = st.tabs(["Open", "U23", "U18"])
                         categories = ['Open', 'U23', 'U18']
                         
                         for cat_idx, cat_name in enumerate(categories):
@@ -163,7 +162,6 @@ else:
                                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
                                     st.caption(f"🟢 Highlighted cells indicate individual selection races satisfying the {cat_name} {evt_name} MPS threshold (≤ {cat_mps_val:.3f}%).")
                                     
-                                    # Filter top 3 strictly by MPS satisfaction count >= 1
                                     valid_nominees = df_cat[df_cat['MPS_SATISFIED_COUNT'] > 0].head(3)
                                     status_label = "Official" if is_official else "Provisional"
                                     st.markdown(f"**{status_label} Top 3 Nominations ({evt_name} - {cat_name}):**")
@@ -190,45 +188,53 @@ else:
 
                 # Render "Nominations Summary" Tab
                 with event_tabs[-1]:
-                    st.subheader(f"📋 {selected_year} National Team Nominations Summary")
-                    st.markdown("Comprehensive overview of all top 3 nominated athletes across events and age categories who have satisfied the minimum MPS threshold.")
+                    st.subheader(f"{selected_year} National Team Nominations Summary")
                     
-                    summary_rows = []
+                    if is_official:
+                        st.success("✅ **OFFICIAL SELECTION REPORT**: Approved and ratified by the Slalom High Performance Committee.")
+                    else:
+                        st.warning("⚠️ **UNOFFICIAL / PRELIMINARY DRAFT REPORT**: Subject to review and pending final approval by the Slalom High Performance Committee.")
+                    
+                    st.markdown("Comprehensive overview of all top 3 nominated athletes who have satisfied the minimum MPS threshold, separated by age category.")
+                    
                     categories = ['Open', 'U23', 'U18']
                     
-                    for evt_name in events_list:
-                        for cat_name in categories:
+                    for cat_name in categories:
+                        st.markdown(f"### {cat_name} Category Nominations")
+                        cat_rows = []
+                        
+                        for evt_name in events_list:
                             df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
                             if not df_cat.empty:
                                 valid_nominees = df_cat[df_cat['MPS_SATISFIED_COUNT'] > 0].head(3)
                                 for _, row in valid_nominees.iterrows():
-                                    summary_rows.append({
+                                    cat_rows.append({
                                         "Event": evt_name,
-                                        "Category": cat_name,
                                         "Rank": row['RANK'],
                                         "Athlete": row['ATHLETE'],
                                         "Province": row['PROVINCE'],
                                         "YOB": row['YOB_INT'],
                                         "Total Points": row['TOTAL_POINTS'],
-                                        "MPS Satisfied": row['MPS_SATISFIED_COUNT'],
-                                        "Avg PPS (%)": f"{row['AVG_BEST4_PPS']:.2f}%" if pd.notna(row['AVG_BEST4_PPS']) else "-"
+                                        "MPS Satisfied": row['MPS_SATISFIED_COUNT']
                                     })
                                     
-                    if summary_rows:
-                        df_summary = pd.DataFrame(summary_rows)
-                        st.dataframe(df_summary, use_container_width=True, hide_index=True)
+                        if cat_rows:
+                            df_cat_summary = pd.DataFrame(cat_rows)
+                            st.dataframe(df_cat_summary, use_container_width=True, hide_index=True)
+                            
+                            file_status_tag = "OFFICIAL" if is_official else "UNOFFICIAL"
+                            cat_csv = df_cat_summary.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label=f"📥 Download {selected_year} {cat_name} Nominations Report ({file_status_tag})",
+                                data=cat_csv,
+                                file_name=f"CKC_{selected_year}_{cat_name}_Nominations_{file_status_tag}.csv",
+                                mime="text/csv",
+                                key=f"dl_summary_{cat_name}"
+                            )
+                        else:
+                            st.info(f"No athletes met the criteria for nomination in the {cat_name} category.")
                         
-                        file_status_tag = "OFFICIAL" if is_official else "UNOFFICIAL"
-                        summary_csv = df_summary.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label=f"📥 Download All Nominations Summary Report ({file_status_tag})",
-                            data=summary_csv,
-                            file_name=f"CKC_{selected_year}_All_Nominations_Summary_{file_status_tag}.csv",
-                            mime="text/csv",
-                            key="dl_all_nominations_summary"
-                        )
-                    else:
-                        st.info("No athletes met the criteria for nomination across any events.")
+                        st.markdown("---")
             else:
                 st.warning("No valid event columns found in dataset.")
                         
