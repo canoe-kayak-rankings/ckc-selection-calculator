@@ -70,7 +70,6 @@ else:
                     else:
                         st.warning("🔴 UNOFFICIAL (Draft)")
 
-                # Pass selection_year explicitly to the engine function
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
                 base_scores = rankings_dict.get('_BASE_SCORES', {})
                 base_breakdowns = rankings_dict.get('_BASE_BREAKDOWNS', {})
@@ -83,12 +82,18 @@ else:
                         with evt_tab:
                             st.subheader(f"{selected_year} - {evt_name} Team Selection Standings")
                             
-                            # Render 4-Boat Base Score Breakdown Report Table
+                            # Render 4-Boat Base Score Breakdown Report Table (Grouped by Race Day)
                             st.markdown("### 📈 4-Boat Base Score Breakdown (MK1, WK1, MC1, WC1)")
                             base_table_data = []
-                            for rc in selected_races:
-                                if selection_year_int == 2026 and selected_races.index(rc) + 1 == 6:
+                            
+                            active_races_to_show = []
+                            for i, rc in enumerate(selected_races):
+                                race_idx = i + 1
+                                if selection_year_int == 2026 and race_idx == 6:
                                     continue
+                                active_races_to_show.append(rc)
+                                
+                            for rc in active_races_to_show:
                                 b_val = base_scores.get(rc, np.nan)
                                 details = base_breakdowns.get(rc, {})
                                 
@@ -96,7 +101,7 @@ else:
                                 for disc in ['MK1', 'WK1', 'MC1', 'WC1']:
                                     d_info = details.get(disc)
                                     if d_info:
-                                        row_data[disc] = f"{d_info['athlete']} ({d_info['time']:.2f}s)"
+                                        row_data[disc] = f"{d_info['athlete']} ({d_info['time']:.2f}s [from {d_info.get('race_col', rc)}])"
                                     else:
                                         row_data[disc] = "No Time"
                                 base_table_data.append(row_data)
@@ -119,8 +124,8 @@ else:
                                     df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
                                     
                                     if not df_cat.empty:
-                                        race_time_cols = selected_races
-                                        pps_cols = [f"{rc}_PPS" for rc in selected_races if f"{rc}_PPS" in df_cat.columns]
+                                        race_time_cols = active_races_to_show
+                                        pps_cols = [f"{rc}_PPS" for rc in active_races_to_show if f"{rc}_PPS" in df_cat.columns]
                                         
                                         display_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB_INT', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + race_time_cols + pps_cols
                                         available_disp = [c for c in display_cols if c in df_cat.columns]
