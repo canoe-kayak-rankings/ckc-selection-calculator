@@ -70,6 +70,7 @@ else:
                     else:
                         st.warning("🔴 UNOFFICIAL (Draft)")
 
+                # Pass selection_year explicitly to the engine function
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
                 base_scores = rankings_dict.get('_BASE_SCORES', {})
                 base_breakdowns = rankings_dict.get('_BASE_BREAKDOWNS', {})
@@ -86,7 +87,7 @@ else:
                             st.markdown("### 📈 4-Boat Base Score Breakdown (MK1, WK1, MC1, WC1)")
                             base_table_data = []
                             for rc in selected_races:
-                                if selection_year == 2026 and selected_races.index(rc) + 1 == 6:
+                                if selection_year_int == 2026 and selected_races.index(rc) + 1 == 6:
                                     continue
                                 b_val = base_scores.get(rc, np.nan)
                                 details = base_breakdowns.get(rc, {})
@@ -160,7 +161,7 @@ else:
                                             label=f"📥 Download {selected_year} {evt_name} {cat_name} Report ({file_status_tag})",
                                             data=csv_data,
                                             file_name=csv_filename,
-                                            mime="text/css",
+                                            mime="text/csv",
                                             key=f"dl_{evt_name}_{cat_name}_{selected_year}_{file_status_tag}"
                                         )
                                     else:
