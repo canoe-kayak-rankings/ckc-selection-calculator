@@ -106,7 +106,6 @@ def load_mps_lookup(target_file):
                         val = float(row[val_col])
                         if val < 2.0:
                             val = val * 100.0
-                        # 3 decimal precision for MPS standards
                         mps_dict[(ev, cat)] = round(val, 3)
                     except:
                         pass
@@ -143,16 +142,14 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
     }
     df['EVENT'] = df['EVENT'].apply(lambda ev: event_standard_map.get(str(ev).strip().upper(), str(ev).strip().upper()))
 
-    # Format raw race times to 2 decimals
     for rc in active_race_cols:
         df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
 
     base_scores = {}
     for rc in active_race_cols:
-        session_df = df[['EVENT', rc']].rename(columns={rc: 'TIME'})
+        session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
         base_scores[rc] = calculate_four_boat_base(session_df)
 
-    # Calculate PPS to 3 decimals internally for accurate MPS threshold checking, but display formatted
     for rc in active_race_cols:
         b_score = base_scores.get(rc, np.nan)
         pps_list = []
