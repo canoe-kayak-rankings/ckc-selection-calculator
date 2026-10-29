@@ -65,10 +65,13 @@ def load_mps_lookup(target_file):
             cat_col = next((c for c in df_mps.columns if 'CAT' in c or 'GROUP' in c), None)
             val_col = next((c for c in df_mps.columns if 'PCT' in c or 'VAL' in c or 'STANDARD' in c or 'MPS' in c), None)
             
-            if event_col and cat_col and val_col:
+            if event_col and val_col:
                 for _, row in df_mps.iterrows():
                     ev = str(row[event_col]).strip().upper()
-                    cat_raw = str(row[cat_col]).strip().upper()
+                    if not ev or ev == 'NAN':
+                        continue
+                        
+                    cat_raw = str(row[cat_col]).strip().upper() if cat_col and pd.notna(row[cat_col]) else 'OPEN'
                     
                     if ev == 'STATUS' or cat_raw == 'STATUS':
                         if 'OFFICIAL' in str(row[val_col]).upper():
@@ -80,8 +83,8 @@ def load_mps_lookup(target_file):
                         cat = 'U18'
                     elif 'U23' in cat_raw or 'UNDER 23' in cat_raw or 'U-23' in cat_raw:
                         cat = 'U23'
-                    elif 'OPEN' in cat_raw or 'SENIOR' in cat_raw:
-                        cat = 'Open'
+                    elif 'OPEN' in cat_raw or 'SENIOR' in cat_raw or not cat_raw or cat_raw == 'NAN':
+                        cat = 'OPEN'
                         
                     try:
                         val = float(row[val_col])
@@ -102,11 +105,6 @@ def get_points_for_rank(rank):
     return 999
 
 def calculate_race_day_base_details(df_all_events, day_race_cols):
-    """
-    Computes the 4-boat base score across a set of race columns representing a single race day 
-    (e.g., Race 2 & 3 share day 2, Race 4 & 5 share day 3).
-    Takes the fastest valid time across all specified columns for each of the four standard disciplines.
-    """
     disciplines = ['MK1', 'WK1', 'MC1', 'WC1']
     alias_map = {
         'MK1': ['MK1', 'K1M', "MEN'S K1", "MEN'S KAYAK"],
@@ -163,10 +161,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
     for rc in active_race_cols:
         df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
 
-    # Map race columns to race days:
-    # Race 1 -> Day 1 ([active_race_cols[0]])
-    # Race 2 & 3 -> Day 2 ([active_race_cols[1], active_race_cols[2]])
-    # Race 4 & 5 -> Day 3 ([active_race_cols[3], active_race_cols[4]])
     race_day_groups = {}
     if len(active_race_cols) >= 1:
         race_day_groups[active_race_cols[0]] = [active_race_cols[0]]
@@ -176,7 +170,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
     if len(active_race_cols) >= 5:
         race_day_groups[active_race_cols[3]] = [active_race_cols[3], active_race_cols[4]]
         race_day_groups[active_race_cols[4]] = [active_race_cols[3], active_race_cols[4]]
-    # Handle any extra columns if present
     for rc in active_race_cols:
         if rc not in race_day_groups:
             race_day_groups[rc] = [rc]
@@ -204,13 +197,13 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
 
     if selection_year == 2026:
         categories = {
-            'Open': lambda df_sub: df_sub,
+            'OPEN': lambda df_sub: df_sub,
             'U23': lambda df_sub: df_sub[(df_sub['YOB_INT'] >= 2003) & (df_sub['YOB_INT'] <= 2011)],
             'U18': lambda df_sub: df_sub[(df_sub['YOB_INT'] >= 2008) & (df_sub['YOB_INT'] <= 2011)]
         }
     else:
         categories = {
-            'Open': lambda df_sub: df_sub,
+            'OPEN': lambda df_sub: df_sub,
             'U23': lambda df_sub: df_sub[(selection_year - df_sub['YOB_INT']) < 23],
             'U18': lambda df_sub: df_sub[(selection_year - df_sub['YOB_INT']) < 18]
         }
@@ -298,7 +291,9 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
             
             eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
             eg['RANK'] = range(1, len(eg) + 1)
-            all_rankings[event_name][cat_name] = eg
+            # Store with standard key name
+            display_cat_name = 'Open' if cat_name == 'OPEN' else cat_name
+            all_rankings[event_name][display_cat_name] = eg
 
     all_rankings['_BASE_SCORES'] = base_scores
     all_rankings['_BASE_BREAKDOWNS'] = base_breakdowns
