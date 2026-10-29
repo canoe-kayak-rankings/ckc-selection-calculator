@@ -66,7 +66,6 @@ def calculate_four_boat_base(df_race_day):
     return np.nan
 
 def load_mps_lookup(target_file):
-    """Loads MPS thresholds from an 'MPS' sheet in the Excel workbook if present."""
     mps_dict = {}
     try:
         xls = pd.ExcelFile(target_file)
@@ -116,7 +115,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
 
     base_scores = {}
     for rc in active_race_cols:
-        session_df = df[['EVENT', rc']].rename(columns={rc: 'TIME'})
+        session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
         base_scores[rc] = calculate_four_boat_base(session_df)
 
     def get_points_for_rank(rank):
@@ -175,7 +174,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
         }
 
     all_rankings = {}
-
     mps_dict = mps_dict or {}
 
     for event_name, event_group in df.groupby('EVENT'):
@@ -187,7 +185,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
                 all_rankings[event_name][cat_name] = pd.DataFrame()
                 continue
                 
-            cat_mps = mps_dict.get((event_name.upper(), cat_name.upper()), 105.0) # default fallback if not found
+            cat_mps = mps_dict.get((event_name.upper(), cat_name.upper()), 105.0)
             
             total_points = []
             avg_pps_list = []
