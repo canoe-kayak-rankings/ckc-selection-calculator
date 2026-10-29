@@ -49,9 +49,21 @@ else:
             if len(selected_races) > 0:
                 selection_year_int = int(selected_year)
                 
-                # Load MPS thresholds from Excel 'MPS' sheet if present
+                # Load MPS thresholds from Excel 'MPS' sheet and format as percentages
                 mps_dict = load_mps_lookup(target_file)
                 
+                # Render Sidebar MPS Summary ONCE here
+                with st.sidebar:
+                    st.subheader(f"📊 {selected_year} MPS Standards")
+                    if mps_dict:
+                        mps_df_display = pd.DataFrame([
+                            {"Event": ev, "Category": cat, "Max PPS (%)": f"{val}%"} 
+                            for (ev, cat), val in mps_dict.items()
+                        ])
+                        st.dataframe(mps_df_display, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No 'MPS' sheet found in Excel workbook.")
+
                 # Process rankings dictionary
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
                 
@@ -71,18 +83,6 @@ else:
                                     df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
                                     
                                     if not df_cat.empty:
-                                        # Display sidebar MPS summary
-                                        with st.sidebar:
-                                            st.subheader(f"📊 {selected_year} MPS Standards")
-                                            if mps_dict:
-                                                mps_df_display = pd.DataFrame([
-                                                    {"Event": ev, "Category": cat, "Max PPS (%)": f"{val}%"} 
-                                                    for (ev, cat), val in mps_dict.items()
-                                                ])
-                                                st.dataframe(mps_df_display, hide_index=True, use_container_width=True)
-                                            else:
-                                                st.info("No 'MPS' sheet found in Excel workbook.")
-
                                         display_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB_INT', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + [f"{rc}_PPS" for rc in selected_races if f"{rc}_PPS" in df_cat.columns]
                                         available_disp = [c for c in display_cols if c in df_cat.columns]
                                         
