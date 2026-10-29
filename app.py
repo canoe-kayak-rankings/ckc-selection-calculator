@@ -49,10 +49,11 @@ else:
             if len(selected_races) > 0:
                 selection_year_int = int(selected_year)
                 
-                # Load MPS thresholds from Excel 'MPS' sheet and format as percentages
-                mps_dict = load_mps_lookup(target_file)
+                # Load MPS thresholds and status directly from Excel file
+                mps_dict, file_status = load_mps_lookup(target_file)
+                is_official = (file_status == "OFFICIAL")
                 
-                # Render Sidebar MPS Summary and Status Toggle
+                # Render Sidebar MPS Summary and Read-Only Publication Status
                 with st.sidebar:
                     st.subheader(f"📊 {selected_year} MPS Standards")
                     if mps_dict:
@@ -66,13 +67,10 @@ else:
                         
                     st.markdown("---")
                     st.subheader("📌 Publication Status")
-                    results_status = st.radio(
-                        "Set Results Status", 
-                        ["🔴 UNOFFICIAL (Draft)", "🟢 OFFICIAL (Approved)"],
-                        index=0
-                    )
-                    # Fixed string check so "UNOFFICIAL" doesn't trigger True
-                    is_official = "🟢 OFFICIAL" in results_status
+                    if is_official:
+                        st.success("🟢 OFFICIAL (Ratified)")
+                    else:
+                        st.warning("🔴 UNOFFICIAL (Draft)")
 
                 # Process rankings dictionary
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
