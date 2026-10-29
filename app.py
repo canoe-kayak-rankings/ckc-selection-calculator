@@ -128,7 +128,6 @@ else:
                         cat_tabs = st.tabs(["Open", "U23", "U18"])
                         categories = ['Open', 'U23', 'U18']
                         
-                        # Pre-compute valid nominees for U18 and U23 to handle alternate logic
                         event_u18_df = rankings_dict[evt_name].get('U18', pd.DataFrame())
                         valid_u18_athletes = set(event_u18_df[event_u18_df['MPS_SATISFIED_COUNT'] > 0].head(3)['ATHLETE'].tolist())
                         
@@ -171,11 +170,8 @@ else:
                                     status_label = "Official" if is_official else "Provisional"
                                     
                                     if cat_name == 'U23':
-                                        # Select top 3 U23 athletes who satisfy MPS
                                         u23_nominees = valid_u23_pool.head(3)
                                         nominated_names = set(u23_nominees['ATHLETE'].tolist())
-                                        
-                                        # Check if any U23 nominee is also in U18 top 3
                                         overlap_athletes = nominated_names.intersection(valid_u18_athletes)
                                         
                                         st.markdown(f"**{status_label} Top 3 Nominations ({evt_name} - {cat_name}):**")
@@ -185,7 +181,6 @@ else:
                                                 tag = " *(Also selected to Junior/U18 team)*" if is_overlap else ""
                                                 st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {row['AVG_BEST4_PPS']:.2f}%{tag}")
                                             
-                                            # Find alternate if there is an overlap
                                             if overlap_athletes:
                                                 remaining_pool = valid_u23_pool[~valid_u23_pool['ATHLETE'].isin(nominated_names)]
                                                 if not remaining_pool.empty:
@@ -217,7 +212,7 @@ else:
                                 else:
                                     st.info(f"No eligible athletes found for {evt_name} in category {cat_name}.")
 
-                # Render "Nominations Summary" Tab
+                # Render "Nominations Summary" Tab (Without Status/Notes Column)
                 with event_tabs[-1]:
                     st.subheader(f"{selected_year} National Team Nominations Summary")
                     
@@ -244,9 +239,6 @@ else:
                                 nominees = valid_pool.head(3)
                                 
                                 for _, row in nominees.iterrows():
-                                    notes = "Primary"
-                                    if cat_name == 'U23' and row['ATHLETE'] in v_u18_names:
-                                        notes = "Primary (Also Junior)"
                                     cat_rows.append({
                                         "Event": evt_name,
                                         "Rank": row['RANK'],
@@ -254,11 +246,9 @@ else:
                                         "Province": row['PROVINCE'],
                                         "YOB": row['YOB_INT'],
                                         "Total Points": row['TOTAL_POINTS'],
-                                        "MPS Satisfied": row['MPS_SATISFIED_COUNT'],
-                                        "Status / Notes": notes
+                                        "MPS Satisfied": row['MPS_SATISFIED_COUNT']
                                     })
                                     
-                                # Add U23 alternate if there's an overlap
                                 if cat_name == 'U23':
                                     nominee_names = set(nominees['ATHLETE'].tolist())
                                     if nominee_names.intersection(v_u18_names):
@@ -272,8 +262,7 @@ else:
                                                 "Province": alt_row['PROVINCE'],
                                                 "YOB": alt_row['YOB_INT'],
                                                 "Total Points": alt_row['TOTAL_POINTS'],
-                                                "MPS Satisfied": alt_row['MPS_SATISFIED_COUNT'],
-                                                "Status / Notes": "U23 Alternate"
+                                                "MPS Satisfied": alt_row['MPS_SATISFIED_COUNT']
                                             })
                                     
                         if cat_rows:
