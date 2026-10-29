@@ -66,17 +66,14 @@ def calculate_four_boat_base(df_race_day):
     return np.nan
 
 def load_mps_lookup(target_file):
-    """Loads MPS thresholds and workbook publication status from an 'MPS' sheet in Excel."""
     mps_dict = {}
-    status = "UNOFFICIAL" # Default status
-    
+    status = "UNOFFICIAL"
     try:
         xls = pd.ExcelFile(target_file)
         matching_sheets = [s for s in xls.sheet_names if 'MPS' in s.upper()]
         if matching_sheets:
             df_mps = pd.read_excel(target_file, sheet_name=matching_sheets[0])
             
-            # Check for any status keyword in the dataframe
             full_text = df_mps.astype(str).to_string().upper()
             if 'OFFICIAL' in full_text and 'UNOFFICIAL' not in full_text:
                 status = "OFFICIAL"
@@ -92,12 +89,20 @@ def load_mps_lookup(target_file):
             if event_col and cat_col and val_col:
                 for _, row in df_mps.iterrows():
                     ev = str(row[event_col]).strip().upper()
-                    cat = str(row[cat_col]).strip().upper()
+                    cat_raw = str(row[cat_col]).strip().upper()
                     
-                    if ev == 'STATUS' or cat == 'STATUS':
+                    if ev == 'STATUS' or cat_raw == 'STATUS':
                         if 'OFFICIAL' in str(row[val_col]).upper():
                             status = "OFFICIAL"
                         continue
+                    
+                    cat = cat_raw
+                    if 'U18' in cat_raw or 'JUNIOR' in cat_raw or 'U-18' in cat_raw:
+                        cat = 'U18'
+                    elif 'U23' in cat_raw or 'UNDER 23' in cat_raw or 'U-23' in cat_raw:
+                        cat = 'U23'
+                    elif 'OPEN' in cat_raw or 'SENIOR' in cat_raw:
+                        cat = 'Open'
                         
                     try:
                         val = float(row[val_col])
@@ -135,7 +140,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
 
     base_scores = {}
     for rc in active_race_cols:
-        session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
+        session_df = df[['EVENT', rc']].rename(columns={rc: 'TIME'})
         base_scores[rc] = calculate_four_boat_base(session_df)
 
     def get_points_for_rank(rank):
@@ -233,14 +238,15 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
                 
                 best_pts = r_pts_sorted[:count_limit] if len(r_pts_sorted) >= count_limit else r_pts_sorted
                 
-                tot_p = sum(best_pts) if any(p < 900 for p in best_pts) else 999
+                # TOTAL_POINTS rounded to integer (no decimals)
+                tot_p = int(round(sum(best_pts))) if any(p < 900 for p in best_pts) else 999
                 total_points.append(tot_p)
                 
                 valid_pps = [p for p in r_pps if pd.notna(p)]
                 valid_pps.sort()
                 best_pps = valid_pps[:count_limit] if len(valid_pps) >= count_limit else valid_pps
                 avg_pps = sum(best_pps) / len(best_pps) if best_pps else np.nan
-                avg_pps_list.append(avg_pps)
+                avg_pps_list.append(round(avg_pps, 2) if pd.notna(avg_pps) else np.nan)
                 mps_satisfied_counts.append(satisfied_count)
                 
             eg['TOTAL_POINTS'] = total_points
