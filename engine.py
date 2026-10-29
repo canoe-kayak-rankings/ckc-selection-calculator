@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import math
 import re
 
 def normalize_columns(df):
@@ -162,11 +163,12 @@ def calculate_race_day_base_details(df_all_events, day_race_cols):
         other_times = [disc_best[d]['time'] for d in other_discs]
         if len(other_times) == 3:
             factor = default_factors.get(missing_disc, 0.726)
-            base_score = round((sum(other_times) / 4.0) / factor, 3)
+            # Truncate / round to 2 decimal places
+            base_score = round((sum(other_times) / 4.0) / factor, 2)
             return base_score, disc_best
 
     times = [v['time'] for v in disc_best.values() if v is not None]
-    base_score = round(sum(times) / len(times), 3) if len(times) == 4 else np.nan
+    base_score = round(sum(times) / len(times), 2) if len(times) == 4 else np.nan
     
     return base_score, disc_best
 
