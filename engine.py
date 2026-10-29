@@ -140,7 +140,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
 
     base_scores = {}
     for rc in active_race_cols:
-        session_df = df[['EVENT', rc']].rename(columns={rc: 'TIME'})
+        session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
         base_scores[rc] = calculate_four_boat_base(session_df)
 
     def get_points_for_rank(rank):
@@ -238,7 +238,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
                 
                 best_pts = r_pts_sorted[:count_limit] if len(r_pts_sorted) >= count_limit else r_pts_sorted
                 
-                # TOTAL_POINTS rounded to integer (no decimals)
                 tot_p = int(round(sum(best_pts))) if any(p < 900 for p in best_pts) else 999
                 total_points.append(tot_p)
                 
