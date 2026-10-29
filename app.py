@@ -56,7 +56,7 @@ else:
                     st.subheader(f"📊 {selected_year} MPS Standards")
                     if mps_dict:
                         mps_df_display = pd.DataFrame([
-                            {"Event": ev, "Category": cat, "Max PPS (%)": f"{val}%"} 
+                            {"Event": ev, "Category": cat, "Max PPS (%)": f"{val:.3f}%"} 
                             for (ev, cat), val in mps_dict.items()
                         ])
                         st.dataframe(mps_df_display, hide_index=True, use_container_width=True)
@@ -93,7 +93,6 @@ else:
                                     df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
                                     
                                     if not df_cat.empty:
-                                        # Include raw race time columns + PPS columns + points columns
                                         race_time_cols = selected_races
                                         pps_cols = [f"{rc}_PPS" for rc in selected_races if f"{rc}_PPS" in df_cat.columns]
                                         
@@ -111,15 +110,18 @@ else:
                                                 pass
                                             return ''
 
-                                        # Highlight ONLY race PPS columns (excluding AVG_BEST4_PPS)
                                         pps_subset = [c for c in pps_cols if c in available_disp]
+                                        
+                                        # Format float columns to 2 decimal places for clean display
+                                        format_dict = {col: "{:.2f}" for col in race_time_cols + pps_subset + ['AVG_BEST4_PPS']}
+                                        
                                         styled_df = df_cat[available_disp].style.map(
                                             highlight_mps, 
                                             subset=pps_subset
-                                        )
+                                        ).format(format_dict, na_rep="-")
 
                                         st.dataframe(styled_df, use_container_width=True, hide_index=True)
-                                        st.caption(f"🟢 Highlighted cells indicate individual selection races satisfying the {cat_name} {evt_name} MPS threshold (≤ {cat_mps_val}%).")
+                                        st.caption(f"🟢 Highlighted cells indicate individual selection races satisfying the {cat_name} {evt_name} MPS threshold (≤ {cat_mps_val:.3f}%).")
                                         
                                         top_3 = df_cat.head(3)
                                         status_label = "Official" if is_official else "Provisional"
