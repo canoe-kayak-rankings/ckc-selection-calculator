@@ -49,11 +49,9 @@ else:
             if len(selected_races) > 0:
                 selection_year_int = int(selected_year)
                 
-                # Load MPS thresholds and status directly from Excel file
                 mps_dict, file_status = load_mps_lookup(target_file)
                 is_official = (file_status == "OFFICIAL")
                 
-                # Render Sidebar MPS Summary and Read-Only Publication Status
                 with st.sidebar:
                     st.subheader(f"📊 {selected_year} MPS Standards")
                     if mps_dict:
@@ -72,7 +70,6 @@ else:
                     else:
                         st.warning("🔴 UNOFFICIAL (Draft)")
 
-                # Process rankings dictionary
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
                 
                 events_list = sorted(list(rankings_dict.keys()))
@@ -83,7 +80,6 @@ else:
                         with evt_tab:
                             st.subheader(f"{selected_year} - {evt_name} Team Selection Standings")
                             
-                            # Display status banner at the top of the standings
                             if is_official:
                                 st.success("✅ **OFFICIAL SELECTION RANKINGS**: Approved and ratified by the Slalom High Performance Committee.")
                             else:
@@ -97,7 +93,11 @@ else:
                                     df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
                                     
                                     if not df_cat.empty:
-                                        display_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB_INT', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + [f"{rc}_PPS" for rc in selected_races if f"{rc}_PPS" in df_cat.columns]
+                                        # Include raw race time columns + PPS columns + points columns
+                                        race_time_cols = selected_races
+                                        pps_cols = [f"{rc}_PPS" for rc in selected_races if f"{rc}_PPS" in df_cat.columns]
+                                        
+                                        display_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB_INT', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + race_time_cols + pps_cols
                                         available_disp = [c for c in display_cols if c in df_cat.columns]
                                         
                                         cat_mps_val = mps_dict.get((evt_name.upper(), cat_name.upper()), 105.0)
@@ -111,15 +111,16 @@ else:
                                                 pass
                                             return ''
 
+                                        # Highlight ONLY race PPS columns (excluding AVG_BEST4_PPS)
+                                        pps_subset = [c for c in pps_cols if c in available_disp]
                                         styled_df = df_cat[available_disp].style.map(
                                             highlight_mps, 
-                                            subset=[c for c in available_disp if '_PPS' in c]
+                                            subset=pps_subset
                                         )
 
                                         st.dataframe(styled_df, use_container_width=True, hide_index=True)
-                                        st.caption(f"🟢 Highlighted cells indicate selection races satisfying the {cat_name} {evt_name} MPS threshold (≤ {cat_mps_val}%).")
+                                        st.caption(f"🟢 Highlighted cells indicate individual selection races satisfying the {cat_name} {evt_name} MPS threshold (≤ {cat_mps_val}%).")
                                         
-                                        # Top 3 nominations
                                         top_3 = df_cat.head(3)
                                         status_label = "Official" if is_official else "Provisional"
                                         st.markdown(f"**🌟 {status_label} Top 3 Nominations ({evt_name} - {cat_name}):**")
