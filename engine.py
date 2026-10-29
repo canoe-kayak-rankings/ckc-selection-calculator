@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import math
 import re
 
 def normalize_columns(df):
@@ -163,7 +162,6 @@ def calculate_race_day_base_details(df_all_events, day_race_cols):
         other_times = [disc_best[d]['time'] for d in other_discs]
         if len(other_times) == 3:
             factor = default_factors.get(missing_disc, 0.726)
-            # Truncate / round to 2 decimal places
             base_score = round((sum(other_times) / 4.0) / factor, 2)
             return base_score, disc_best
 
@@ -174,10 +172,10 @@ def calculate_race_day_base_details(df_all_events, day_race_cols):
 
 def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=None):
     df = normalize_columns(df_raw.copy())
-    df['YOB_INT'] = df['YOB'].apply(extract_year)
+    df['YOB'] = df['YOB'].apply(extract_year)
     
     if selection_year == 2026:
-        df = df[df['YOB_INT'] < 2012].copy()
+        df = df[df['YOB'] < 2012].copy()
     
     active_race_cols = []
     for i, rc in enumerate(race_cols):
@@ -234,14 +232,14 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
     if selection_year == 2026:
         categories = {
             'OPEN': lambda df_sub: df_sub,
-            'U23': lambda df_sub: df_sub[(df_sub['YOB_INT'] >= 2003) & (df_sub['YOB_INT'] <= 2011)],
-            'U18': lambda df_sub: df_sub[(df_sub['YOB_INT'] >= 2008) & (df_sub['YOB_INT'] <= 2011)]
+            'U23': lambda df_sub: df_sub[(df_sub['YOB'] >= 2003) & (df_sub['YOB'] <= 2011)],
+            'U18': lambda df_sub: df_sub[(df_sub['YOB'] >= 2008) & (df_sub['YOB'] <= 2011)]
         }
     else:
         categories = {
             'OPEN': lambda df_sub: df_sub,
-            'U23': lambda df_sub: df_sub[(selection_year - df_sub['YOB_INT']) < 23],
-            'U18': lambda df_sub: df_sub[(selection_year - df_sub['YOB_INT']) < 18]
+            'U23': lambda df_sub: df_sub[(selection_year - df_sub['YOB']) < 23],
+            'U18': lambda df_sub: df_sub[(selection_year - df_sub['YOB']) < 18]
         }
 
     all_rankings = {}
