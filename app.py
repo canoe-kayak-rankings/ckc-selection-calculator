@@ -7,7 +7,7 @@ from engine import process_selection_rankings, load_mps_lookup
 
 st.set_page_config(
     page_title="CKC National Team Selection Calculator",
-    page_icon="",
+    page_icon="🚣",
     layout="wide"
 )
 
@@ -71,7 +71,8 @@ else:
                         ["🔴 UNOFFICIAL (Draft)", "🟢 OFFICIAL (Approved)"],
                         index=0
                     )
-                 is_official = "🟢 OFFICIAL" in results_status
+                    # Fixed string check so "UNOFFICIAL" doesn't trigger True
+                    is_official = "🟢 OFFICIAL" in results_status
 
                 # Process rankings dictionary
                 rankings_dict = process_selection_rankings(df_raw, selected_races, selection_year=selection_year_int, mps_dict=mps_dict)
