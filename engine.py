@@ -66,12 +66,23 @@ def calculate_four_boat_base(df_race_day):
     return np.nan
 
 def load_mps_lookup(target_file):
+    """Loads MPS thresholds and workbook publication status from an 'MPS' sheet in Excel."""
     mps_dict = {}
+    status = "UNOFFICIAL" # Default status
+    
     try:
         xls = pd.ExcelFile(target_file)
         matching_sheets = [s for s in xls.sheet_names if 'MPS' in s.upper()]
         if matching_sheets:
             df_mps = pd.read_excel(target_file, sheet_name=matching_sheets[0])
+            
+            # Check for any status keyword in the dataframe
+            full_text = df_mps.astype(str).to_string().upper()
+            if 'OFFICIAL' in full_text and 'UNOFFICIAL' not in full_text:
+                status = "OFFICIAL"
+            elif 'STATUS: OFFICIAL' in full_text or 'STATUS = OFFICIAL' in full_text:
+                status = "OFFICIAL"
+                
             df_mps.columns = [str(c).strip().upper() for c in df_mps.columns]
             
             event_col = next((c for c in df_mps.columns if 'EVENT' in c or 'DISC' in c), None)
@@ -82,6 +93,12 @@ def load_mps_lookup(target_file):
                 for _, row in df_mps.iterrows():
                     ev = str(row[event_col]).strip().upper()
                     cat = str(row[cat_col]).strip().upper()
+                    
+                    if ev == 'STATUS' or cat == 'STATUS':
+                        if 'OFFICIAL' in str(row[val_col]).upper():
+                            status = "OFFICIAL"
+                        continue
+                        
                     try:
                         val = float(row[val_col])
                         if val < 2.0:
@@ -91,7 +108,8 @@ def load_mps_lookup(target_file):
                         pass
     except Exception as e:
         print(f"Could not load MPS sheet: {e}")
-    return mps_dict
+        
+    return mps_dict, status
 
 def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=None):
     df = normalize_columns(df_raw.copy())
