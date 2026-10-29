@@ -65,15 +65,40 @@ def calculate_four_boat_base(df_race_day):
         return round(sum(valid_vals) / 4.0, 2)
     return np.nan
 
-def process_selection_rankings(df_raw, race_cols, selection_year=2026):
+def load_mps_lookup(target_file):
+    """Loads MPS thresholds from an 'MPS' sheet in the Excel workbook if present."""
+    mps_dict = {}
+    try:
+        xls = pd.ExcelFile(target_file)
+        matching_sheets = [s for s in xls.sheet_names if 'MPS' in s.upper()]
+        if matching_sheets:
+            df_mps = pd.read_excel(target_file, sheet_name=matching_sheets[0])
+            df_mps.columns = [str(c).strip().upper() for c in df_mps.columns]
+            
+            event_col = next((c for c in df_mps.columns if 'EVENT' in c or 'DISC' in c), None)
+            cat_col = next((c for c in df_mps.columns if 'CAT' in c or 'GROUP' in c), None)
+            val_col = next((c for c in df_mps.columns if 'PCT' in c or 'VAL' in c or 'STANDARD' in c or 'MPS' in c), None)
+            
+            if event_col and cat_col and val_col:
+                for _, row in df_mps.iterrows():
+                    ev = str(row[event_col]).strip().upper()
+                    cat = str(row[cat_col]).strip().upper()
+                    try:
+                        val = float(row[val_col])
+                        mps_dict[(ev, cat)] = val
+                    except:
+                        pass
+    except Exception as e:
+        print(f"Could not load MPS sheet: {e}")
+    return mps_dict
+
+def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=None):
     df = normalize_columns(df_raw.copy())
     df['YOB_INT'] = df['YOB'].apply(extract_year)
     
-    # Exclude cadets / U14 (born 2012 or later) for 2026 selection rankings
     if selection_year == 2026:
         df = df[df['YOB_INT'] < 2012].copy()
     
-    # Filter out Race 6 entirely for 2026
     active_race_cols = []
     for i, rc in enumerate(race_cols):
         race_idx = i + 1
@@ -91,7 +116,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
 
     base_scores = {}
     for rc in active_race_cols:
-        session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
+        session_df = df[['EVENT', rc']].rename(columns={rc: 'TIME'})
         base_scores[rc] = calculate_four_boat_base(session_df)
 
     def get_points_for_rank(rank):
@@ -151,6 +176,8 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
 
     all_rankings = {}
 
+    mps_dict = mps_dict or {}
+
     for event_name, event_group in df.groupby('EVENT'):
         all_rankings[event_name] = {}
         
@@ -160,12 +187,16 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
                 all_rankings[event_name][cat_name] = pd.DataFrame()
                 continue
                 
+            cat_mps = mps_dict.get((event_name.upper(), cat_name.upper()), 105.0) # default fallback if not found
+            
             total_points = []
             avg_pps_list = []
+            mps_satisfied_counts = []
             
             for _, row in eg.iterrows():
                 r_pts = []
                 r_pps = []
+                satisfied_count = 0
                 
                 for rc in active_race_cols:
                     race_orig_idx = race_cols.index(rc) + 1
@@ -173,7 +204,11 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
                         continue 
                         
                     r_pts.append(row[f'{rc}_PTS'])
-                    r_pps.append(row[f'{rc}_PPS'])
+                    pps_val = row[f'{rc}_PPS']
+                    r_pps.append(pps_val)
+                    
+                    if pd.notna(pps_val) and pps_val <= cat_mps:
+                        satisfied_count += 1
                 
                 r_pts_sorted = sorted(r_pts)
                 count_limit = 3 if selection_year == 2026 else 4
@@ -188,9 +223,11 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026):
                 best_pps = valid_pps[:count_limit] if len(valid_pps) >= count_limit else valid_pps
                 avg_pps = sum(best_pps) / len(best_pps) if best_pps else np.nan
                 avg_pps_list.append(avg_pps)
+                mps_satisfied_counts.append(satisfied_count)
                 
             eg['TOTAL_POINTS'] = total_points
             eg['AVG_BEST4_PPS'] = avg_pps_list
+            eg['MPS_SATISFIED_COUNT'] = mps_satisfied_counts
             
             eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
             eg['RANK'] = range(1, len(eg) + 1)
