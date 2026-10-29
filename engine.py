@@ -84,7 +84,6 @@ def load_mps_lookup(target_file):
                     cat = str(row[cat_col]).strip().upper()
                     try:
                         val = float(row[val_col])
-                        # If stored as decimal ratio (e.g. 1.069), convert to percentage (106.9)
                         if val < 2.0:
                             val = val * 100.0
                         mps_dict[(ev, cat)] = round(val, 2)
@@ -118,7 +117,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
 
     base_scores = {}
     for rc in active_race_cols:
-        session_df = df[['EVENT', rc']].rename(columns={rc: 'TIME'})
+        session_df = df[['EVENT', rc]].rename(columns={rc: 'TIME'})
         base_scores[rc] = calculate_four_boat_base(session_df)
 
     def get_points_for_rank(rank):
