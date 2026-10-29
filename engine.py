@@ -101,7 +101,12 @@ def get_points_for_rank(rank):
     elif rank >= 3: return rank
     return 999
 
-def calculate_four_boat_base_details(df_all_events, rc):
+def calculate_race_day_base_details(df_all_events, day_race_cols):
+    """
+    Computes the 4-boat base score across a set of race columns representing a single race day 
+    (e.g., Race 2 & 3 share day 2, Race 4 & 5 share day 3).
+    Takes the fastest valid time across all specified columns for each of the four standard disciplines.
+    """
     disciplines = ['MK1', 'WK1', 'MC1', 'WC1']
     alias_map = {
         'MK1': ['MK1', 'K1M', "MEN'S K1", "MEN'S KAYAK"],
@@ -117,10 +122,11 @@ def calculate_four_boat_base_details(df_all_events, rc):
         
         valid_recs = []
         for _, r in disc_rows.iterrows():
-            t = pd.to_numeric(r.get(rc), errors='coerce')
-            if pd.notna(t) and t < 900:
-                valid_recs.append({'athlete': r.get('ATHLETE', 'Unknown'), 'time': t, 'event': r.get('EVENT', disc)})
-                
+            for rc in day_race_cols:
+                t = pd.to_numeric(r.get(rc), errors='coerce')
+                if pd.notna(t) and t < 900:
+                    valid_recs.append({'athlete': r.get('ATHLETE', 'Unknown'), 'time': t, 'race_col': rc})
+                    
         if valid_recs:
             valid_recs.sort(key=lambda x: x['time'])
             disc_best[disc] = valid_recs[0]
@@ -157,10 +163,29 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
     for rc in active_race_cols:
         df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
 
+    # Map race columns to race days:
+    # Race 1 -> Day 1 ([active_race_cols[0]])
+    # Race 2 & 3 -> Day 2 ([active_race_cols[1], active_race_cols[2]])
+    # Race 4 & 5 -> Day 3 ([active_race_cols[3], active_race_cols[4]])
+    race_day_groups = {}
+    if len(active_race_cols) >= 1:
+        race_day_groups[active_race_cols[0]] = [active_race_cols[0]]
+    if len(active_race_cols) >= 3:
+        race_day_groups[active_race_cols[1]] = [active_race_cols[1], active_race_cols[2]]
+        race_day_groups[active_race_cols[2]] = [active_race_cols[1], active_race_cols[2]]
+    if len(active_race_cols) >= 5:
+        race_day_groups[active_race_cols[3]] = [active_race_cols[3], active_race_cols[4]]
+        race_day_groups[active_race_cols[4]] = [active_race_cols[3], active_race_cols[4]]
+    # Handle any extra columns if present
+    for rc in active_race_cols:
+        if rc not in race_day_groups:
+            race_day_groups[rc] = [rc]
+
     base_scores = {}
     base_breakdowns = {}
     for rc in active_race_cols:
-        b_score, b_details = calculate_four_boat_base_details(df, rc)
+        day_cols = race_day_groups[rc]
+        b_score, b_details = calculate_race_day_base_details(df, day_cols)
         base_scores[rc] = b_score
         base_breakdowns[rc] = b_details
 
