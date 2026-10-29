@@ -145,7 +145,6 @@ def calculate_race_day_base_details(df_all_events, day_race_cols):
             disc_best[disc] = clean_recs[0]
             disc_has_clean_time[disc] = True
         elif valid_recs:
-            # Fallback to best valid time if no strictly clean time exists
             valid_recs.sort(key=lambda x: x['time'])
             disc_best[disc] = valid_recs[0]
             disc_has_clean_time[disc] = False
@@ -153,25 +152,19 @@ def calculate_race_day_base_details(df_all_events, day_race_cols):
             disc_best[disc] = None
             disc_has_clean_time[disc] = False
 
-    # Check if any discipline lacks a clean time (Table 5 trigger)
     missing_clean_disciplines = [d for d in disciplines if disc_best.get(d) is not None and not disc_has_clean_time.get(d, True)]
     
     if len(missing_clean_disciplines) == 1 and all(disc_best.get(d) is not None for d in disciplines):
-        # Table 5 fallback: One discipline's best time includes a 50s penalty.
-        # Standard CKC factor ratios or calculating via 3-discipline average divided by factor.
-        # Using standard conversion factors if missing: MK1=0.771, WK1=0.745, MC1=0.757, WC1=0.726
         default_factors = {'MK1': 0.771, 'WK1': 0.745, 'MC1': 0.757, 'WC1': 0.726}
         missing_disc = missing_clean_disciplines[0]
         other_discs = [d for d in disciplines if d != missing_disc]
         
         other_times = [disc_best[d]['time'] for d in other_discs]
         if len(other_times) == 3:
-            # Formula: (Sum of 3 clean discipline times / 4) / factor
             factor = default_factors.get(missing_disc, 0.726)
             base_score = round((sum(other_times) / 4.0) / factor, 3)
             return base_score, disc_best
 
-    # Standard 4-boat average calculation
     times = [v['time'] for v in disc_best.values() if v is not None]
     base_score = round(sum(times) / len(times), 3) if len(times) == 4 else np.nan
     
@@ -255,4 +248,87 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
     for event_name, event_group in df.groupby('EVENT'):
         all_rankings[event_name] = {}
         
-        for cat_name
+        for cat_name, cat_filter_func in categories.items():
+            eg = cat_filter_func(event_group).copy()
+            if eg.empty:
+                all_rankings[event_name][cat_name] = pd.DataFrame()
+                continue
+                
+            cat_mps = mps_dict.get((event_name.upper(), cat_name.upper()), 105.0)
+            
+            for rc in active_race_cols:
+                pts_col = f'{rc}_PTS'
+                race_pts_map = {}
+                session_res = []
+                for idx, row in eg.iterrows():
+                    race_orig_idx = race_cols.index(rc) + 1
+                    if selection_year == 2026 and cat_name in ['U23', 'U18'] and race_orig_idx == 1:
+                        race_pts_map[idx] = 999
+                        continue
+                        
+                    time_val = pd.to_numeric(row.get(rc), errors='coerce')
+                    if pd.isna(time_val) or time_val >= 900:
+                        race_pts_map[idx] = 999
+                    else:
+                        session_res.append({'idx': idx, 'time': time_val})
+                
+                session_res.sort(key=lambda x: x['time'])
+                current_rank = 1
+                for i, res in enumerate(session_res):
+                    if i > 0 and session_res[i]['time'] == session_res[i-1]['time']:
+                        res['pts'] = session_res[i-1]['pts']
+                    else:
+                        res['pts'] = get_points_for_rank(current_rank)
+                    race_pts_map[res['idx']] = res['pts']
+                    current_rank += 1
+                
+                eg[pts_col] = [race_pts_map.get(idx, 999) for idx in eg.index]
+
+            total_points = []
+            avg_pps_list = []
+            mps_satisfied_counts = []
+            
+            for _, row in eg.iterrows():
+                r_pts = []
+                r_pps = []
+                satisfied_count = 0
+                
+                for rc in active_race_cols:
+                    race_orig_idx = race_cols.index(rc) + 1
+                    if selection_year == 2026 and cat_name in ['U23', 'U18'] and race_orig_idx == 1:
+                        continue 
+                        
+                    r_pts.append(row[f'{rc}_PTS'])
+                    pps_val = row[f'{rc}_PPS']
+                    r_pps.append(pps_val)
+                    
+                    if pd.notna(pps_val) and pps_val <= cat_mps:
+                        satisfied_count += 1
+                
+                r_pts_sorted = sorted(r_pts)
+                count_limit = 3 if selection_year == 2026 else 4
+                
+                best_pts = r_pts_sorted[:count_limit] if len(r_pts_sorted) >= count_limit else r_pts_sorted
+                tot_p = int(round(sum(best_pts))) if any(p < 900 for p in best_pts) else 999
+                total_points.append(tot_p)
+                
+                valid_pps = [p for p in r_pps if pd.notna(p)]
+                valid_pps.sort()
+                best_pps = valid_pps[:count_limit] if len(valid_pps) >= count_limit else valid_pps
+                avg_pps = sum(best_pps) / len(best_pps) if best_pps else np.nan
+                avg_pps_list.append(round(avg_pps, 2) if pd.notna(avg_pps) else np.nan)
+                mps_satisfied_counts.append(satisfied_count)
+                
+            eg['TOTAL_POINTS'] = total_points
+            eg['AVG_BEST4_PPS'] = avg_pps_list
+            eg['MPS_SATISFIED_COUNT'] = mps_satisfied_counts
+            
+            eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
+            eg['RANK'] = range(1, len(eg) + 1)
+            display_cat_name = 'Open' if cat_name == 'OPEN' else cat_name
+            all_rankings[event_name][display_cat_name] = eg
+
+    all_rankings['_BASE_SCORES'] = base_scores
+    all_rankings['_BASE_BREAKDOWNS'] = base_breakdowns
+
+    return all_rankings
