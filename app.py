@@ -6,7 +6,7 @@ import re
 
 st.set_page_config(
     page_title="CKC National Team Selection Calculator",
-    page_icon=" ",
+    page_icon="🇨🇦",
     layout="wide"
 )
 
@@ -55,11 +55,11 @@ def has_50s_penalty(row, rc, all_cols):
 
 def safe_fmt(val):
     if pd.isna(val) or val == '' or val is None:
-        return "-"
+        return "None"
     try:
         v = float(val)
         if v >= 900:
-            return "DNS/DSQ"
+            return "None"
         return f"{v:.2f}"
     except (ValueError, TypeError):
         return str(val)
@@ -112,7 +112,7 @@ table_5_factors = {'MK1': 0.771, 'WK1': 0.745, 'MC1': 0.757, 'WC1': 0.726}
 def run_selection_calculator(comp_year_int):
     year_str = str(comp_year_int)
     st.title(f"🇨🇦 Canoe Kayak Canada - {year_str} National Team Selection Calculator")
-    st.markdown(f"{year_str} Selection Races Rankings")
+    st.markdown(f"{year_str} Season: ICF Age-Compliance (Minimum age 15), Table 5 Correction Factors, and Age Category Standings.")
 
     df_raw, target_file = load_data_source(year_str)
     if df_raw is None:
@@ -213,7 +213,6 @@ def run_selection_calculator(comp_year_int):
         times = [v['time'] for v in disc_best.values() if v is not None]
         return round(sum(times) / len(times), 2) if len(times) == 4 else np.nan, disc_best
 
-    # Separate race columns for Open vs U23/U18 if decoupled (e.g. 2027) or use all for both if shared
     open_race_cols = [rc for rc in active_race_cols if any(k in rc.upper() for k in ['OPEN', 'SENIOR', 'SR'])]
     u23_race_cols = [rc for rc in active_race_cols if any(k in rc.upper() for k in ['U23', 'U18', 'JUNIOR', 'JR'])]
     
@@ -240,9 +239,6 @@ def run_selection_calculator(comp_year_int):
 
     best_races_count = 3 if comp_year_int == 2026 else 4
 
-    # ==========================================
-    # PRE-COMPUTE ALL RANKINGS FOR ALL EVENTS & CATEGORIES FIRST
-    # ==========================================
     processed_rankings = {}
     for evt in events_list:
         processed_rankings[evt] = {}
@@ -293,7 +289,7 @@ def run_selection_calculator(comp_year_int):
             sub_df['RANK'] = range(1, len(sub_df)+1)
             processed_rankings[evt][c_name] = sub_df
 
-    st.markdown(f"### {year_str} 4-Boat Base Score Breakdown (Open Selection Races)")
+    st.markdown(f"### 📊 {year_str} 4-Boat Base Score Breakdown (Open Series)")
     open_b_data = []
     for rc in open_race_cols:
         bv = base_scores.get(rc, np.nan)
@@ -305,7 +301,7 @@ def run_selection_calculator(comp_year_int):
         open_b_data.append(row)
     st.dataframe(pd.DataFrame(open_b_data), hide_index=True, use_container_width=True)
 
-    st.markdown(f"### {year_str} 4-Boat Base Score Breakdown (U23 / U18 Selection Races)")
+    st.markdown(f"### 📊 {year_str} 4-Boat Base Score Breakdown (U23 / U18 Series)")
     u23_b_data = []
     for rc in u23_race_cols:
         bv = base_scores.get(rc, np.nan)
@@ -353,7 +349,7 @@ def run_selection_calculator(comp_year_int):
                     styled_df = sub_df[available_disp].style.map(
                         highlight_mps, 
                         subset=pps_subset
-                    ).format(fmt_map, na_rep="-")
+                    ).format(fmt_map, na_rep="None")
 
                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
                     st.caption(f"🟢 Highlighted cells indicate individual selection races satisfying the {c_name} {evt} MPS threshold (≤ {cat_mps:.3f}%).")
