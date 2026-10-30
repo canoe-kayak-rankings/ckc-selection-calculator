@@ -164,6 +164,7 @@ def run_2026():
         st.markdown("---")
         st.success("🟢 OFFICIAL" if is_official else "🔴 UNOFFICIAL")
 
+    # Table 5 Correction Factors for 50s penalties / missing senior runs
     table_5_factors = {'MK1': 0.771, 'WK1': 0.745, 'MC1': 0.757, 'WC1': 0.726}
 
     def get_base(df_all, day_cols):
@@ -336,11 +337,9 @@ def run_2026():
                                 st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST3_PPS'])}%{tag}")
                             
                             if overlap:
-                                # Find alternate from U23 pool who is NOT in valid_u18 and NOT in top 3 u23 nominees
-                                excluded_names = nom_names.union(valid_u18)
-                                alt_pool = valid_u23_pool[~valid_u23_pool['ATHLETE'].isin(excluded_names)]
-                                if not alt_pool.empty:
-                                    alt = alt_pool.iloc[0]
+                                rem_pool = valid_u23_pool[~valid_u23_pool['ATHLETE'].isin(nom_names)]
+                                if not rem_pool.empty:
+                                    alt = rem_pool.iloc[0]
                                     st.markdown(f"**🔄 U23 Team Alternate (Activated due to Junior team double-qualification):**")
                                     st.write(f"- **{alt['ATHLETE']}** ({alt['PROVINCE']}) | Points: {alt['TOTAL_POINTS']} | MPS Satisfied: {alt['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(alt['AVG_BEST3_PPS'])}")
                         else:
@@ -440,8 +439,6 @@ def run_2027():
     open_day_groups = make_day_groups(open_race_cols)
     u23_18_day_groups = make_day_groups(u23_18_race_cols)
     all_day_groups = {**open_day_groups, **u23_18_day_groups}
-
-    table_5_factors = {'MK1': 0.771, 'WK1': 0.745, 'MC1': 0.757, 'WC1': 0.726}
 
     def calculate_base(df_all, day_race_cols):
         discs = ['MK1', 'WK1', 'MC1', 'WC1']
@@ -633,10 +630,9 @@ def run_2027():
                                 st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST4_PPS'])}%{tag}")
                             
                             if overlap:
-                                excluded_names = nom_names.union(valid_u18)
-                                alt_pool = valid_u23_pool[~valid_u23_pool['ATHLETE'].isin(excluded_names)]
-                                if not alt_pool.empty:
-                                    alt = alt_pool.iloc[0]
+                                rem_pool = valid_u23_pool[~valid_u23_pool['ATHLETE'].isin(nom_names)]
+                                if not rem_pool.empty:
+                                    alt = rem_pool.iloc[0]
                                     st.markdown(f"**🔄 U23 Team Alternate (Activated due to Junior team double-qualification):**")
                                     st.write(f"- **{alt['ATHLETE']}** ({alt['PROVINCE']}) | Points: {alt['TOTAL_POINTS']} | MPS Satisfied: {alt['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(alt['AVG_BEST4_PPS'])}")
                         else:
