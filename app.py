@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
@@ -24,7 +24,6 @@ def find_results_file(year_str):
                     if f.endswith(('.xlsx', '.csv')) and not f.startswith('~$'):
                         if year_str in f or year_str in root:
                             return os.path.join(root, f)
-    # Ultimate fallback: return any xlsx/csv found in workspace
     for d in search_dirs:
         if os.path.exists(d):
             for root, dirs, files in os.walk(d):
@@ -393,5 +392,30 @@ def run_2027():
         
     df['YOB'] = df['YOB'].apply(extract_year)
     
-    open_race_cols = [c for c in df.columns if ('OPEN' in c.upper() or 'SENIOR' in c.upper()) and any(str(i) in c for i in range(1, 7)) and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper() and 'FLAG' not in c.upper()]
-    u23_18_race_cols = [c for c in df.columns if ('U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()) and any(str(i) in c for i in range(1, 7)) and 'RANK' not in c
+    open_race_cols = [
+        c for c in df.columns 
+        if ('OPEN' in c.upper() or 'SENIOR' in c.upper()) 
+        and any(str(i) in c for i in range(1, 7)) 
+        and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper() and 'FLAG' not in c.upper()
+    ]
+    u23_18_race_cols = [
+        c for c in df.columns 
+        if ('U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()) 
+        and any(str(i) in c for i in range(1, 7)) 
+        and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper() and 'FLAG' not in c.upper()
+    ]
+    
+    if not open_race_cols:
+        open_race_cols = [c for c in df.columns if 'OPEN_R' in c.upper() and 'RANK' not in c.upper() and 'PTS' not in c.upper()]
+    if not u23_18_race_cols:
+        u23_18_race_cols = [c for c in df.columns if ('U23_18_R' in c.upper() or 'JUNIOR_R' in c.upper()) and 'RANK' not in c.upper() and 'PTS' not in c.upper()]
+        
+    all_active_races = list(dict.fromkeys(open_race_cols + u23_18_race_cols))
+
+    event_standard_map = {
+        'K1M': 'MK1', "MEN'S K1": 'MK1', "MEN'S KAYAK": 'MK1',
+        'K1W': 'WK1', "WOMEN'S K1": 'WK1', "WOMEN'S KAYAK": 'WK1',
+        'C1M': 'MC1', "MEN'S C1": 'MC1', "MEN'S CANOE": 'MC1',
+        'C1W': 'WC1', "WOMEN'S C1": 'WC1', "WOMEN'S CANOE": 'WC1'
+    }
+    df['EVENT'] = df['EVENT'].apply
