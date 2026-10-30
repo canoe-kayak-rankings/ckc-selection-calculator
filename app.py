@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-from io import BytesIO
 
 st.set_page_config(
     page_title="CKC National Team Selection Calculator",
@@ -25,7 +24,7 @@ else:
     with col_yr:
         selected_year = st.selectbox("📅 Select Competition Year", year_folders)
         
-    # Dynamic Engine Import based on selected competition year
+    # Dynamic Engine Import
     if selected_year == "2027":
         from engine_2027 import process_selection_rankings, load_mps_lookup
     else:
@@ -43,19 +42,16 @@ else:
         try:
             if target_file.endswith('.xlsx'):
                 xls = pd.ExcelFile(target_file)
-                sheet_name = st.selectbox("Select Results Sheet", [s for s in xls.sheet_names if 'MPS' not in s.upper()])
+                sheet_names = [s for s in xls.sheet_names if 'MPS' not in s.upper()]
+                sheet_name = st.selectbox("Select Results Sheet", sheet_names) if len(sheet_names) > 1 else sheet_names[0]
                 df_raw = pd.read_excel(target_file, sheet_name=sheet_name)
             else:
                 df_raw = pd.read_csv(target_file)
                 
-            potential_keywords = ['RACE', 'RUN', 'MH', 'OKC', 'DAY', 'SESSION', 'OPEN_R', 'U23_18_R']
-            detected_races = [
-                c for c in df_raw.columns 
-                if any(k in str(c).upper() for k in potential_keywords) and 'RANK' not in str(c).upper() and 'PTS' not in str(c).upper() and 'PEN' not in str(c).upper()
-            ]
-            
-            selected_races = detected_races if detected_races else df_raw.columns.tolist()
             selection_year_int = int(selected_year)
+            
+            # Pass all columns to engine so it can detect OPEN_R and U23_18_R series
+            selected_races = df_raw.columns.tolist()
             
             mps_dict, file_status = load_mps_lookup(target_file)
             is_official = (file_status == "OFFICIAL")
@@ -87,31 +83,8 @@ else:
                 tabs_labels = [evt for evt in events_list] + ["Nominations Summary"]
                 event_tabs = st.tabs(tabs_labels)
                 
-                # Render Individual Event Tabs
                 for idx, evt_name in enumerate(events_list):
                     with event_tabs[idx]:
-                        st.markdown("### 4-Boat Base Score Breakdown (MK1, WK1, MC1, WC1)")
-                        base_table_data = []
-                        
-                        active_races_to_show = selected_races
-                            
-                        for rc in active_races_to_show:
-                            b_val = base_scores.get(rc, np.nan)
-                            details = base_breakdowns.get(rc, {})
-                            
-                            row_data = {"Race Session": rc, "4-Boat Base Score": f"{b_val:.2f}" if pd.notna(b_val) else "N/A"}
-                            for disc in ['MK1', 'WK1', 'MC1', 'WC1']:
-                                d_info = details.get(disc)
-                                if d_info:
-                                    row_data[disc] = f"{d_info['athlete']} ({d_info['time']:.2f}s [from {d_info.get('race_col', rc)}])"
-                                else:
-                                    row_data[disc] = "No Time"
-                            base_table_data.append(row_data)
-                            
-                        if base_table_data:
-                            st.dataframe(pd.DataFrame(base_table_data), hide_index=True, use_container_width=True)
-                        
-                        st.markdown("---")
                         st.subheader(f"{selected_year} - {evt_name} Team Selection Standings")
                         
                         if is_official:
@@ -133,12 +106,37 @@ else:
                                 df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
                                 
                                 if not df_cat.empty:
-                                    cat_race_cols = [c for c in active_races_to_show if ('OPEN' in c.upper() if cat_name == 'Open' else ('U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()))]
-                                    if not cat_race_cols:
-                                        cat_race_cols = active_races_to_show
+                                    # Filter race columns specific to category series
+                                    if selection_year_int == 2027:
+                                        if cat_name == 'Open':
+                                            cat_race_cols = [c for c in df_cat.columns if 'OPEN_R' in c.upper() and 'PPS' not in c.upper() and 'PTS' not in c.upper()]
+                                        else:
+                                            cat_race_cols = [c for c in df_cat.columns if ('U23_18_R' in c.upper() or 'JUNIOR_R' in c.upper()) and 'PPS' not in c.upper() and 'PTS' not in c.upper()]
+                                    else:
+                                        cat_race_cols = [c for c in df_cat.columns if 'RACE' in c.upper() or 'RUN' in c.upper()]
+
+                                    # Display 4-Boat Base Score table for THIS specific category series
+                                    st.markdown(f"#### 4-Boat Base Score Breakdown ({cat_name} Races)")
+                                    base_table_data = []
+                                    for rc in cat_race_cols:
+                                        b_val = base_scores.get(rc, np.nan)
+                                        details = base_breakdowns.get(rc, {})
                                         
-                                    pps_cols = [f"{rc}_PPS" for rc in cat_race_cols if f"{rc}_PPS" in df_cat.columns]
+                                        row_data = {"Race Session": rc, "4-Boat Base Score": f"{b_val:.2f}" if pd.notna(b_val) else "N/A"}
+                                        for disc in ['MK1', 'WK1', 'MC1', 'WC1']:
+                                            d_info = details.get(disc)
+                                            if d_info:
+                                                row_data[disc] = f"{d_info['athlete']} ({d_info['time']:.2f}s)"
+                                            else:
+                                                row_data[disc] = "No Time"
+                                        base_table_data.append(row_data)
+                                        
+                                    if base_table_data:
+                                        st.dataframe(pd.DataFrame(base_table_data), hide_index=True, use_container_width=True)
+
+                                    st.markdown("---")
                                     
+                                    pps_cols = [f"{rc}_PPS" for rc in cat_race_cols if f"{rc}_PPS" in df_cat.columns]
                                     display_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + cat_race_cols + pps_cols
                                     available_disp = [c for c in display_cols if c in df_cat.columns]
                                     
@@ -209,7 +207,7 @@ else:
                                 else:
                                     st.info(f"No eligible athletes found for {evt_name} in category {cat_name}.")
 
-                # Render "Nominations Summary" Tab
+                # Nominations Summary Tab
                 with event_tabs[-1]:
                     st.subheader(f"{selected_year} National Team Nominations Summary")
                     
@@ -220,9 +218,7 @@ else:
                     
                     st.markdown("Comprehensive overview of all top 3 nominated athletes who have satisfied the minimum MPS threshold, separated by age category.")
                     
-                    categories = ['Open', 'U23', 'U18']
-                    
-                    for cat_name in categories:
+                    for cat_name in ['Open', 'U23', 'U18']:
                         st.markdown(f"### {cat_name} Category Nominations")
                         cat_rows = []
                         
