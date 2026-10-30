@@ -165,13 +165,4 @@ def run_2026():
         st.success("🟢 OFFICIAL" if is_official else "🔴 UNOFFICIAL")
 
     # Table 5 Correction Factors for 50s penalties / missing senior runs
-    table_5_factors = {'MK1': 0.771, 'WK1': 0.745, 'MC1': 0.757, 'WC1': 0.726}
-
-    def get_base(df_all, day_cols):
-        discs = ['MK1', 'WK1', 'MC1', 'WC1']
-        alias = {'MK1': ['MK1', 'K1M'], 'WK1': ['WK1', 'K1W'], 'MC1': ['MC1', 'C1M'], 'WC1': ['WC1', 'C1W']}
-        disc_best = {}
-        for d in discs:
-            d_rows = df_all[df_all['EVENT'].str.strip().str.upper().isin([a.upper() for a in alias[d]])]
-            clean_recs = []
-            for _, r in d_rows.iterrows():
+    table_5_
