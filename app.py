@@ -610,4 +610,44 @@ def run_2027():
                             overlap = nom_names.intersection(valid_u18)
                             
                             for _, row in u23_nominees.iterrows():
-                                is_ov = row['ATHLETE'] in valid_u1
+                                is_ov = row['ATHLETE'] in valid_u18
+                                tag = " *(Also selected to Junior/U18 team)*" if is_ov else ""
+                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST4_PPS'])}%{tag}")
+                            
+                            if overlap:
+                                rem_pool = valid_u23_pool[~valid_u23_pool['ATHLETE'].isin(nom_names)]
+                                if not rem_pool.empty:
+                                    alt = rem_pool.iloc[0]
+                                    st.markdown(f"**🔄 U23 Team Alternate (Activated due to Junior team double-qualification):**")
+                                    st.write(f"- **{alt['ATHLETE']}** ({alt['PROVINCE']}) | Points: {alt['TOTAL_POINTS']} | MPS Satisfied: {alt['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(alt['AVG_BEST4_PPS'])}%")
+                        else:
+                            for _, row in valid_nominees.iterrows():
+                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST4_PPS'])}%")
+                    else:
+                        st.info("No athletes in this category met the minimum MPS satisfaction requirement for nomination.")
+
+    with tabs[-1]:
+        st.subheader("2027 National Team Nominations Summary")
+        for c_name in ['Open', 'U23', 'U18']:
+            st.markdown(f"#### {c_name} Category Nominations")
+            nom_rows = []
+            for evt in events_list:
+                df_c = processed_rankings.get(evt, {}).get(c_name, pd.DataFrame())
+                if not df_c.empty:
+                    valid_n = df_c[df_c['MPS_SATISFIED_COUNT'] > 0].head(3)
+                    for _, r in valid_n.iterrows():
+                        nom_rows.append({
+                            "Event": evt, "Rank": r['RANK'], "Athlete": r['ATHLETE'],
+                            "Province": r['PROVINCE'], "YOB": r['YOB'],
+                            "Total Points": r['TOTAL_POINTS'], "MPS Count": r['MPS_SATISFIED_COUNT']
+                        })
+            if nom_rows:
+                st.dataframe(pd.DataFrame(nom_rows), hide_index=True, use_container_width=True)
+            else:
+                st.info(f"No athletes met MPS requirements for {c_name} nomination.")
+
+# Router Dispatch
+if selected_year == "2026":
+    run_2026()
+elif selected_year == "2027":
+    run_2027()
