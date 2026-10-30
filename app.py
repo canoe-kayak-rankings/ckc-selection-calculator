@@ -112,7 +112,7 @@ table_5_factors = {'MK1': 0.771, 'WK1': 0.745, 'MC1': 0.757, 'WC1': 0.726}
 def run_selection_calculator(comp_year_int):
     year_str = str(comp_year_int)
     st.title(f"🇨🇦 Canoe Kayak Canada - {year_str} National Team Selection Calculator")
-    st.markdown(f"{year_str} Season: ICF Age-Compliance (Minimum age 15), Table 5 Correction Factors, and Age Category Standings.")
+    st.markdown(f"{year_str} Selection Races Rankings")
 
     df_raw, target_file = load_data_source(year_str)
     if df_raw is None:
