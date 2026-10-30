@@ -134,6 +134,8 @@ def calculate_race_day_base_details(df_all_events, day_race_cols):
         clean_recs = []
         for _, r in disc_rows.iterrows():
             for rc in day_race_cols:
+                if rc not in r:
+                    continue
                 t = pd.to_numeric(r.get(rc), errors='coerce')
                 if pd.notna(t) and t < 900:
                     rec = {'athlete': r.get('ATHLETE', 'Unknown'), 'time': t, 'race_col': rc}
@@ -175,6 +177,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
     df = normalize_columns(df_raw.copy())
     df['YOB'] = df['YOB'].apply(extract_year)
     
+    # Strictly identify Open vs U23/U18 columns
     open_race_cols = [c for c in df.columns if 'OPEN_R' in c.upper() and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
     u23_18_race_cols = [c for c in df.columns if ('U23_18_R' in c.upper() or 'JUNIOR_R' in c.upper()) and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
 
@@ -183,7 +186,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
     if not u23_18_race_cols:
         u23_18_race_cols = [c for c in race_cols if 'U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()]
         
-    all_active_races = open_race_cols + u23_18_race_cols if (open_race_cols or u23_18_race_cols) else race_cols
+    all_active_races = open_race_cols + u23_18_race_cols
 
     event_standard_map = {
         'K1M': 'MK1', "MEN'S K1": 'MK1', "MEN'S KAYAK": 'MK1',
@@ -196,10 +199,27 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
     for rc in all_active_races:
         df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
 
+    # Build session day groups for base scores (R1&R2, R3&R4, R5&R6 per series)
+    def make_day_groups(series_cols):
+        groups = {}
+        sorted_cols = sorted(series_cols)
+        for i, rc in enumerate(sorted_cols):
+            # Pair consecutive races (0&1 -> day 1, 2&3 -> day 2, 4&5 -> day 3)
+            pair_idx = i // 2
+            start = pair_idx * 2
+            day_group = sorted_cols[start:start+2] if start+2 <= len(sorted_cols) else [sorted_cols[-1]]
+            groups[rc] = day_group
+        return groups
+
+    open_day_groups = make_day_groups(open_race_cols)
+    u23_18_day_groups = make_day_groups(u23_18_race_cols)
+    all_day_groups = {**open_day_groups, **u23_18_day_groups}
+
     base_scores = {}
     base_breakdowns = {}
     for rc in all_active_races:
-        b_score, b_details = calculate_race_day_base_details(df, [rc])
+        day_cols = all_day_groups.get(rc, [rc])
+        b_score, b_details = calculate_race_day_base_details(df, day_cols)
         base_scores[rc] = b_score
         base_breakdowns[rc] = b_details
 
@@ -214,11 +234,10 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
                 pps_list.append(round(pps, 3))
         df[pps_col] = pps_list
 
-    # Precise ICF Age-Filtering Rules
     categories = {
-        'OPEN': (lambda df_sub: df_sub[(selection_year - df_sub['YOB']) >= 15], open_race_cols if open_race_cols else all_active_races),
-        'U23': (lambda df_sub: df_sub[((selection_year - df_sub['YOB']) <= 23) & ((selection_year - df_sub['YOB']) >= 15)], u23_18_race_cols if u23_18_race_cols else all_active_races),
-        'U18': (lambda df_sub: df_sub[((selection_year - df_sub['YOB']) <= 18) & ((selection_year - df_sub['YOB']) >= 15)], u23_18_race_cols if u23_18_race_cols else all_active_races)
+        'OPEN': (lambda df_sub: df_sub[(selection_year - df_sub['YOB']) >= 15], open_race_cols),
+        'U23': (lambda df_sub: df_sub[((selection_year - df_sub['YOB']) <= 23) & ((selection_year - df_sub['YOB']) >= 15)], u23_18_race_cols),
+        'U18': (lambda df_sub: df_sub[((selection_year - df_sub['YOB']) <= 18) & ((selection_year - df_sub['YOB']) >= 15)], u23_18_race_cols)
     }
 
     all_rankings = {}
