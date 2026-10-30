@@ -1,0 +1,303 @@
+import pandas as pd
+import numpy as np
+import math
+import re
+
+def normalize_columns(df):
+    col_map = {}
+    for col in df.columns:
+        c_str = str(col).strip().upper()
+        if c_str in ['EVENT', 'DISCIPLINE', 'LONG EVENT']:
+            col_map[col] = 'EVENT'
+        elif c_str in ['RACER', 'ATHLETE', 'NAME', 'FULL NAME']:
+            col_map[col] = 'ATHLETE'
+        elif c_str in ['CATEGORY', 'AGE GROUP', 'AGE_GROUP', 'CLASS']:
+            col_map[col] = 'CATEGORY'
+        elif c_str in ['PROVINCE', 'PROV', 'PRO']:
+            col_map[col] = 'PROVINCE'
+        elif c_str in ['YOB', 'BIRTHYEAR', 'YEAR OF BIRTH', 'BIRTHDATE (YYYY/MM/DD)', 'BIRTHDATE']:
+            col_map[col] = 'YOB'
+            
+    df_renamed = df.rename(columns=col_map)
+    
+    if 'EVENT' not in df_renamed.columns:
+        df_renamed['EVENT'] = ''
+    if 'ATHLETE' not in df_renamed.columns:
+        if 'First Name' in df_renamed.columns and 'Last Name' in df_renamed.columns:
+            df_renamed['ATHLETE'] = df_renamed['First Name'].fillna('') + ' ' + df_renamed['Last Name'].fillna('')
+        else:
+            df_renamed['ATHLETE'] = 'Unknown'
+    if 'PROVINCE' not in df_renamed.columns:
+        df_renamed['PROVINCE'] = ''
+    if 'YOB' not in df_renamed.columns:
+        df_renamed['YOB'] = 2000
+        
+    return df_renamed
+
+def extract_year(val):
+    if pd.isna(val):
+        return 2000
+    match = re.search(r'(19\d{2}|20\d{2})', str(val))
+    if match:
+        return int(match.group(1))
+    try:
+        return int(float(val))
+    except:
+        return 2000
+
+def load_mps_lookup(target_file):
+    mps_dict = {}
+    status = "UNOFFICIAL"
+    try:
+        xls = pd.ExcelFile(target_file)
+        matching_sheets = [s for s in xls.sheet_names if 'MPS' in s.upper()]
+        if matching_sheets:
+            df_mps = pd.read_excel(target_file, sheet_name=matching_sheets[0])
+            
+            full_text = df_mps.astype(str).to_string().upper()
+            if 'OFFICIAL' in full_text and 'UNOFFICIAL' not in full_text:
+                status = "OFFICIAL"
+            elif 'STATUS: OFFICIAL' in full_text or 'STATUS = OFFICIAL' in full_text:
+                status = "OFFICIAL"
+                
+            df_mps.columns = [str(c).strip().upper() for c in df_mps.columns]
+            
+            event_col = next((c for c in df_mps.columns if 'EVENT' in c or 'DISC' in c), None)
+            cat_col = next((c for c in df_mps.columns if 'CAT' in c or 'GROUP' in c), None)
+            val_col = next((c for c in df_mps.columns if 'PCT' in c or 'VAL' in c or 'STANDARD' in c or 'MPS' in c), None)
+            
+            if event_col and val_col:
+                for _, row in df_mps.iterrows():
+                    ev = str(row[event_col]).strip().upper()
+                    if not ev or ev == 'NAN':
+                        continue
+                        
+                    cat_raw = str(row[cat_col]).strip().upper() if cat_col and pd.notna(row[cat_col]) else 'OPEN'
+                    
+                    if ev == 'STATUS' or cat_raw == 'STATUS':
+                        if 'OFFICIAL' in str(row[val_col]).upper():
+                            status = "OFFICIAL"
+                        continue
+                    
+                    cat = cat_raw
+                    if 'U18' in cat_raw or 'JUNIOR' in cat_raw or 'U-18' in cat_raw:
+                        cat = 'U18'
+                    elif 'U23' in cat_raw or 'UNDER 23' in cat_raw or 'U-23' in cat_raw:
+                        cat = 'U23'
+                    elif 'OPEN' in cat_raw or 'SENIOR' in cat_raw or not cat_raw or cat_raw == 'NAN':
+                        cat = 'OPEN'
+                        
+                    try:
+                        val = float(row[val_col])
+                        if val < 2.0:
+                            val = val * 100.0
+                        mps_dict[(ev, cat)] = round(val, 3)
+                    except:
+                        pass
+    except Exception as e:
+        print(f"Could not load MPS sheet for 2027: {e}")
+        
+    return mps_dict, status
+
+def get_points_for_rank(rank):
+    if rank == 1: return 0
+    elif rank == 2: return 2
+    elif rank >= 3: return rank
+    return 999
+
+def has_50s_penalty(row, rc):
+    for col_suffix in ['_PEN50', '_PEN', '_FLAG']:
+        flag_col = f"{rc}{col_suffix}"
+        if flag_col in row and pd.notna(row[flag_col]):
+            val = str(row[flag_col]).strip().upper()
+            if val in ['50', 'Y', 'YES', 'TRUE', 'PEN50', 'X', '50.0']:
+                return True
+    return False
+
+def calculate_race_day_base_details(df_all_events, day_race_cols):
+    disciplines = ['MK1', 'WK1', 'MC1', 'WC1']
+    alias_map = {
+        'MK1': ['MK1', 'K1M', "MEN'S K1", "MEN'S KAYAK"],
+        'WK1': ['WK1', 'K1W', "WOMEN'S K1", "WOMEN'S KAYAK"],
+        'MC1': ['MC1', 'C1M', "MEN'S C1", "MEN'S CANOE"],
+        'WC1': ['WC1', 'C1W', "WOMEN'S C1", "WOMEN'S CANOE"]
+    }
+    
+    disc_best = {}
+    disc_has_clean_time = {}
+    
+    for disc in disciplines:
+        aliases = alias_map[disc]
+        disc_rows = df_all_events[df_all_events['EVENT'].str.strip().str.upper().isin([a.upper() for a in aliases])]
+        
+        valid_recs = []
+        clean_recs = []
+        for _, r in disc_rows.iterrows():
+            for rc in day_race_cols:
+                t = pd.to_numeric(r.get(rc), errors='coerce')
+                if pd.notna(t) and t < 900:
+                    rec = {'athlete': r.get('ATHLETE', 'Unknown'), 'time': t, 'race_col': rc}
+                    valid_recs.append(rec)
+                    if not has_50s_penalty(r, rc):
+                        clean_recs.append(rec)
+                        
+        if clean_recs:
+            clean_recs.sort(key=lambda x: x['time'])
+            disc_best[disc] = clean_recs[0]
+            disc_has_clean_time[disc] = True
+        elif valid_recs:
+            valid_recs.sort(key=lambda x: x['time'])
+            disc_best[disc] = valid_recs[0]
+            disc_has_clean_time[disc] = False
+        else:
+            disc_best[disc] = None
+            disc_has_clean_time[disc] = False
+
+    missing_clean_disciplines = [d for d in disciplines if disc_best.get(d) is not None and not disc_has_clean_time.get(d, True)]
+    
+    if len(missing_clean_disciplines) == 1 and all(disc_best.get(d) is not None for d in disciplines):
+        default_factors = {'MK1': 0.771, 'WK1': 0.745, 'MC1': 0.757, 'WC1': 0.726}
+        missing_disc = missing_clean_disciplines[0]
+        other_discs = [d for d in disciplines if d != missing_disc]
+        
+        other_times = [disc_best[d]['time'] for d in other_discs]
+        if len(other_times) == 3:
+            factor = default_factors.get(missing_disc, 0.726)
+            base_score = round((sum(other_times) / 4.0) / factor, 2)
+            return base_score, disc_best
+
+    times = [v['time'] for v in disc_best.values() if v is not None]
+    base_score = round(sum(times) / len(times), 2) if len(times) == 4 else np.nan
+    
+    return base_score, disc_best
+
+def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=None):
+    df = normalize_columns(df_raw.copy())
+    df['YOB'] = df['YOB'].apply(extract_year)
+    
+    open_race_cols = [c for c in df.columns if 'OPEN_R' in c.upper() and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
+    u23_18_race_cols = [c for c in df.columns if ('U23_18_R' in c.upper() or 'JUNIOR_R' in c.upper()) and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
+
+    if not open_race_cols:
+        open_race_cols = [c for c in race_cols if 'OPEN' in c.upper()]
+    if not u23_18_race_cols:
+        u23_18_race_cols = [c for c in race_cols if 'U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()]
+        
+    all_active_races = open_race_cols + u23_18_race_cols if (open_race_cols or u23_18_race_cols) else race_cols
+
+    event_standard_map = {
+        'K1M': 'MK1', "MEN'S K1": 'MK1', "MEN'S KAYAK": 'MK1',
+        'K1W': 'WK1', "WOMEN'S K1": 'WK1', "WOMEN'S KAYAK": 'WK1',
+        'C1M': 'MC1', "MEN'S C1": 'MC1', "MEN'S CANOE": 'MC1',
+        'C1W': 'WC1', "WOMEN'S C1": 'WC1', "WOMEN'S CANOE": 'WC1'
+    }
+    df['EVENT'] = df['EVENT'].apply(lambda ev: event_standard_map.get(str(ev).strip().upper(), str(ev).strip().upper()))
+
+    for rc in all_active_races:
+        df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
+
+    base_scores = {}
+    base_breakdowns = {}
+    for rc in all_active_races:
+        b_score, b_details = calculate_race_day_base_details(df, [rc])
+        base_scores[rc] = b_score
+        base_breakdowns[rc] = b_details
+
+        pps_col = f'{rc}_PPS'
+        pps_list = []
+        for _, row in df.iterrows():
+            time_val = pd.to_numeric(row.get(rc), errors='coerce')
+            if pd.isna(time_val) or time_val >= 900:
+                pps_list.append(np.nan)
+            else:
+                pps = (time_val / b_score) * 100 if pd.notna(b_score) and b_score > 0 else np.nan
+                pps_list.append(round(pps, 3))
+        df[pps_col] = pps_list
+
+    categories = {
+        'OPEN': (lambda df_sub: df_sub, open_race_cols if open_race_cols else all_active_races),
+        'U23': (lambda df_sub: df_sub[(selection_year - df_sub['YOB']) < 23], u23_18_race_cols if u23_18_race_cols else all_active_races),
+        'U18': (lambda df_sub: df_sub[(selection_year - df_sub['YOB']) < 18], u23_18_race_cols if u23_18_race_cols else all_active_races)
+    }
+
+    all_rankings = {}
+    mps_dict = mps_dict or {}
+
+    for event_name, event_group in df.groupby('EVENT'):
+        all_rankings[event_name] = {}
+        
+        for cat_name, (cat_filter_func, cat_races) in categories.items():
+            eg = cat_filter_func(event_group).copy()
+            if eg.empty or not cat_races:
+                all_rankings[event_name][cat_name] = pd.DataFrame()
+                continue
+                
+            cat_mps = mps_dict.get((event_name.upper(), cat_name.upper()), 105.0)
+            
+            for rc in cat_races:
+                pts_col = f'{rc}_PTS'
+                race_pts_map = {}
+                session_res = []
+                for idx, row in eg.iterrows():
+                    time_val = pd.to_numeric(row.get(rc), errors='coerce')
+                    if pd.isna(time_val) or time_val >= 900:
+                        race_pts_map[idx] = 999
+                    else:
+                        session_res.append({'idx': idx, 'time': time_val})
+                
+                session_res.sort(key=lambda x: x['time'])
+                current_rank = 1
+                for i, res in enumerate(session_res):
+                    if i > 0 and session_res[i]['time'] == session_res[i-1]['time']:
+                        res['pts'] = session_res[i-1]['pts']
+                    else:
+                        res['pts'] = get_points_for_rank(current_rank)
+                    race_pts_map[res['idx']] = res['pts']
+                    current_rank += 1
+                
+                eg[pts_col] = [race_pts_map.get(idx, 999) for idx in eg.index]
+
+            total_points = []
+            avg_pps_list = []
+            mps_satisfied_counts = []
+            
+            for _, row in eg.iterrows():
+                r_pts = []
+                r_pps = []
+                satisfied_count = 0
+                
+                for rc in cat_races:
+                    r_pts.append(row[f'{rc}_PTS'])
+                    pps_val = row[f'{rc}_PPS']
+                    r_pps.append(pps_val)
+                    
+                    if pd.notna(pps_val) and pps_val <= cat_mps:
+                        satisfied_count += 1
+                
+                r_pts_sorted = sorted(r_pts)
+                count_limit = 4
+                
+                best_pts = r_pts_sorted[:count_limit] if len(r_pts_sorted) >= count_limit else r_pts_sorted
+                tot_p = int(round(sum(best_pts))) if any(p < 900 for p in best_pts) else 999
+                total_points.append(tot_p)
+                
+                valid_pps = [p for p in r_pps if pd.notna(p)]
+                valid_pps.sort()
+                best_pps = valid_pps[:count_limit] if len(valid_pps) >= count_limit else valid_pps
+                avg_pps = sum(best_pps) / len(best_pps) if best_pps else np.nan
+                avg_pps_list.append(round(avg_pps, 2) if pd.notna(avg_pps) else np.nan)
+                mps_satisfied_counts.append(satisfied_count)
+                
+            eg['TOTAL_POINTS'] = total_points
+            eg['AVG_BEST4_PPS'] = avg_pps_list
+            eg['MPS_SATISFIED_COUNT'] = mps_satisfied_counts
+            
+            eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
+            eg['RANK'] = range(1, len(eg) + 1)
+            display_cat_name = 'Open' if cat_name == 'OPEN' else cat_name
+            all_rankings[event_name][display_cat_name] = eg
+
+    all_rankings['_BASE_SCORES'] = base_scores
+    all_rankings['_BASE_BREAKDOWNS'] = base_breakdowns
+
+    return all_rankings
