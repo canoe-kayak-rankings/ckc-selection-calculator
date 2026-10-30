@@ -16,7 +16,6 @@ def find_results_file(year_str):
         os.path.join(os.path.dirname(__file__), "data"),
         os.path.dirname(__file__)
     ]
-    # Strict search: Only return a file if year_str is explicitly in the filename or folder name
     for d in search_dirs:
         if os.path.exists(d):
             for root, dirs, files in os.walk(d):
@@ -37,7 +36,7 @@ def has_50s_penalty(row, rc, all_cols):
     rc_str = str(rc).strip().upper()
     for col in all_cols:
         col_u = str(col).strip().upper()
-        if rc_str in col_u and any(k in col_u for k in ['PEN', 'FLAG', '50']):
+        if rc_str in col_u and any(k in col_u for k in ['_PEN', 'PENALTY', 'FLAG', '_50']):
             if col_u != rc_str:
                 val = str(row.get(col)).strip().upper()
                 if val not in ['NAN', 'NONE', ''] and val in ['50', 'Y', 'YES', 'TRUE', 'PEN50', 'X', '50.0', '1', '1.0']:
@@ -132,7 +131,7 @@ def run_2026():
     df['YOB'] = df['YOB'].apply(extract_year)
 
     potential_keywords = ['RACE', 'RUN', 'MH', 'OKC', 'DAY', 'SESSION', 'R1', 'R2', 'R3', 'R4', 'R5']
-    detected_races = [c for c in df.columns if any(k in str(c).upper() for k in potential_keywords) and 'RANK' not in str(c).upper() and 'PTS' not in str(c).upper() and 'PEN' not in str(c).upper() and 'FLAG' not in str(c).upper()]
+    detected_races = [c for c in df.columns if any(k in str(c).upper() for k in potential_keywords) and not any(w in str(c).upper() for w in ['RANK', 'PTS', '_PEN', 'PENALTY', 'FLAG'])]
     active_race_cols = detected_races if detected_races else [c for c in df.columns if 'RACE' in c.upper() or 'RUN' in c.upper()]
     active_race_cols = [rc for i, rc in enumerate(active_race_cols) if i + 1 != 6]
 
@@ -379,13 +378,13 @@ def run_2027():
 
     df['YOB'] = df['YOB'].apply(extract_year)
 
-    open_race_cols = [c for c in df.columns if ('OPEN' in c.upper() or 'SENIOR' in c.upper()) and any(str(i) in c for i in range(1, 7)) and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper() and 'FLAG' not in c.upper()]
-    u23_18_race_cols = [c for c in df.columns if ('U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()) and any(str(i) in c for i in range(1, 7)) and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper() and 'FLAG' not in c.upper()]
+    open_race_cols = [c for c in df.columns if ('OPEN' in c.upper() or 'SENIOR' in c.upper()) and any(str(i) in c for i in range(1, 7)) and not any(w in str(c).upper() for w in ['RANK', 'PTS', '_PEN', 'PENALTY', 'FLAG'])]
+    u23_18_race_cols = [c for c in df.columns if ('U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()) and any(str(i) in c for i in range(1, 7)) and not any(w in str(c).upper() for w in ['RANK', 'PTS', '_PEN', 'PENALTY', 'FLAG'])]
 
     if not open_race_cols:
-        open_race_cols = [c for c in df.columns if 'OPEN_R' in c.upper() and 'RANK' not in c.upper() and 'PTS' not in c.upper()]
+        open_race_cols = [c for c in df.columns if 'OPEN_R' in c.upper() and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
     if not u23_18_race_cols:
-        u23_18_race_cols = [c for c in df.columns if ('U23_18_R' in c.upper() or 'JUNIOR_R' in c.upper()) and 'RANK' not in c.upper() and 'PTS' not in c.upper()]
+        u23_18_race_cols = [c for c in df.columns if ('U23_18_R' in c.upper() or 'JUNIOR_R' in c.upper()) and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
 
     all_active_races = list(dict.fromkeys(open_race_cols + u23_18_race_cols))
     if not all_active_races:
@@ -468,4 +467,158 @@ def run_2027():
         if mps_dict:
             st.dataframe(pd.DataFrame([{"Event": ev, "Category": cat, "Max PPS (%)": f"{val:.3f}%"} for (ev, cat), val in mps_dict.items()]), hide_index=True, use_container_width=True)
         st.markdown("---")
-        st.success
+        st.success("🟢 OFFICIAL" if is_official else "🔴 UNOFFICIAL")
+
+    events_list = sorted(df['EVENT'].dropna().unique())
+    if not events_list:
+        st.error("No event categories found in spreadsheet.")
+        return
+
+    tabs = st.tabs(list(events_list) + ["Nominations Summary"])
+    processed_rankings = {}
+
+    for idx, evt in enumerate(events_list):
+        processed_rankings[evt] = {}
+        with tabs[idx]:
+            st.subheader(f"2027 - {evt} Team Selection Standings")
+            cat_tabs = st.tabs(["Open", "U23", "U18"])
+            evt_grp = df[df['EVENT'] == evt]
+
+            for c_idx, c_name in enumerate(['Open', 'U23', 'U18']):
+                with cat_tabs[c_idx]:
+                    filter_func, cat_races = categories[c_name]
+                    sub_df = filter_func(evt_grp).copy()
+
+                    if sub_df.empty or not cat_races:
+                        st.info(f"No eligible athletes found for {c_name}.")
+                        processed_rankings[evt][c_name] = pd.DataFrame()
+                        continue
+
+                    st.markdown(f"#### 4-Boat Base Score Breakdown ({c_name} Series)")
+                    b_data = []
+                    for rc in cat_races:
+                        bv = base_scores.get(rc, np.nan)
+                        det = base_breakdowns.get(rc, {})
+                        row = {"Race Session": rc, "Base Score": f"{bv:.2f}" if pd.notna(bv) else "N/A"}
+                        for d in ['MK1', 'WK1', 'MC1', 'WC1']:
+                            info = det.get(d)
+                            row[d] = f"{info['athlete']} ({info['time']:.2f}s)" if info else "No Time"
+                        b_data.append(row)
+                    st.dataframe(pd.DataFrame(b_data), hide_index=True, use_container_width=True)
+                    st.markdown("---")
+
+                    for rc in cat_races:
+                        pts_map = {}
+                        session_res = []
+                        for i, r in sub_df.iterrows():
+                            if rc not in r: continue
+                            t = pd.to_numeric(r.get(rc), errors='coerce')
+                            if pd.isna(t) or t >= 900: pts_map[i] = 999
+                            else: session_res.append({'idx': i, 'time': t})
+                        session_res.sort(key=lambda x: x['time'])
+                        for r_i, sr in enumerate(session_res):
+                            pts_map[sr['idx']] = 0 if r_i==0 else (2 if r_i==1 else r_i+1)
+                        sub_df[f'{rc}_PTS'] = [pts_map.get(i, 999) for i in sub_df.index]
+
+                    tot_pts, avg_pps, mps_cnt = [], [], []
+                    cat_mps = mps_dict.get((evt.upper(), c_name.upper()), 105.0)
+                    for _, r in sub_df.iterrows():
+                        pts, ppss, sat = [], [], 0
+                        for rc in cat_races:
+                            if f'{rc}_PTS' in r: pts.append(r[f'{rc}_PTS'])
+                            if f'{rc}_PPS' in r:
+                                pps_v = r[f'{rc}_PPS']
+                                if pd.notna(pps_v):
+                                    ppss.append(pps_v)
+                                    if pps_v <= cat_mps: sat += 1
+                        best_p = sorted(pts)[:4]
+                        tot_pts.append(int(round(sum(best_p))) if any(p < 900 for p in best_p) else 999)
+                        best_pps = sorted(ppss)[:4]
+                        avg_pps.append(round(sum(best_pps)/len(best_pps), 2) if best_pps else np.nan)
+                        mps_cnt.append(sat)
+
+                    sub_df['TOTAL_POINTS'] = tot_pts
+                    sub_df['AVG_BEST4_PPS'] = avg_pps
+                    sub_df['MPS_SATISFIED_COUNT'] = mps_cnt
+                    sub_df = sub_df.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS']).reset_index(drop=True)
+                    sub_df['RANK'] = range(1, len(sub_df)+1)
+                    processed_rankings[evt][c_name] = sub_df
+
+                    pps_cols = [f"{rc}_PPS" for rc in cat_races if f"{rc}_PPS" in sub_df.columns]
+                    disp_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + cat_races + pps_cols
+                    available_disp = [c for c in disp_cols if c in sub_df.columns]
+
+                    def highlight_mps(val):
+                        try:
+                            v = float(val)
+                            if v <= cat_mps:
+                                return 'background-color: #d4edda; color: #155724;'
+                        except:
+                            pass
+                        return ''
+
+                    pps_subset = [c for c in pps_cols if c in available_disp]
+                    fmt_map = {col: safe_fmt for col in cat_races + pps_subset + ['AVG_BEST4_PPS']}
+
+                    styled_df = sub_df[available_disp].style.map(
+                        highlight_mps, 
+                        subset=pps_subset
+                    ).format(fmt_map, na_rep="-")
+
+                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                    st.caption(f"🟢 Highlighted cells indicate individual selection races satisfying the {c_name} {evt} MPS threshold (≤ {cat_mps:.3f}%).")
+                    
+                    status_label = "Official" if is_official else "Provisional"
+                    valid_nominees = sub_df[sub_df['MPS_SATISFIED_COUNT'] > 0].head(3)
+                    st.markdown(f"**{status_label} Top 3 Nominations ({evt} - {c_name}):**")
+                    if not valid_nominees.empty:
+                        if c_name == 'U23':
+                            u18_df = processed_rankings[evt].get('U18', pd.DataFrame())
+                            valid_u18 = set(u18_df[u18_df['MPS_SATISFIED_COUNT'] > 0].head(3)['ATHLETE'].tolist()) if not u18_df.empty else set()
+                            valid_u23_pool = sub_df[sub_df['MPS_SATISFIED_COUNT'] > 0]
+                            u23_nominees = valid_u23_pool.head(3)
+                            nom_names = set(u23_nominees['ATHLETE'].tolist())
+                            overlap = nom_names.intersection(valid_u18)
+                            
+                            for _, row in u23_nominees.iterrows():
+                                is_ov = row['ATHLETE'] in valid_u18
+                                tag = " *(Also selected to Junior/U18 team)*" if is_ov else ""
+                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST4_PPS'])}%{tag}")
+                            
+                            if overlap:
+                                rem_pool = valid_u23_pool[~valid_u23_pool['ATHLETE'].isin(nom_names)]
+                                if not rem_pool.empty:
+                                    alt = rem_pool.iloc[0]
+                                    st.markdown(f"**🔄 U23 Team Alternate (Activated due to Junior team double-qualification):**")
+                                    st.write(f"- **{alt['ATHLETE']}** ({alt['PROVINCE']}) | Points: {alt['TOTAL_POINTS']} | MPS Satisfied: {alt['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(alt['AVG_BEST4_PPS'])}%")
+                        else:
+                            for _, row in valid_nominees.iterrows():
+                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST4_PPS'])}%")
+                    else:
+                        st.info("No athletes in this category met the minimum MPS satisfaction requirement for nomination.")
+
+    with tabs[-1]:
+        st.subheader("2027 National Team Nominations Summary")
+        for c_name in ['Open', 'U23', 'U18']:
+            st.markdown(f"#### {c_name} Category Nominations")
+            nom_rows = []
+            for evt in events_list:
+                df_c = processed_rankings.get(evt, {}).get(c_name, pd.DataFrame())
+                if not df_c.empty:
+                    valid_n = df_c[df_c['MPS_SATISFIED_COUNT'] > 0].head(3)
+                    for _, r in valid_n.iterrows():
+                        nom_rows.append({
+                            "Event": evt, "Rank": r['RANK'], "Athlete": r['ATHLETE'],
+                            "Province": r['PROVINCE'], "YOB": r['YOB'],
+                            "Total Points": r['TOTAL_POINTS'], "MPS Count": r['MPS_SATISFIED_COUNT']
+                        })
+            if nom_rows:
+                st.dataframe(pd.DataFrame(nom_rows), hide_index=True, use_container_width=True)
+            else:
+                st.info(f"No athletes met MPS requirements for {c_name} nomination.")
+
+# Router Dispatch
+if selected_year == "2026":
+    run_2026()
+elif selected_year == "2027":
+    run_2027()
