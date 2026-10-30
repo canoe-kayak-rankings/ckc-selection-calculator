@@ -15,7 +15,7 @@ def normalize_columns(df):
             col_map[col] = 'CATEGORY'
         elif c_str in ['PROVINCE', 'PROV', 'PRO']:
             col_map[col] = 'PROVINCE'
-        elif c_str in ['YOB', 'BIRTHYEAR', 'YEAR OF BIRTH', 'BIRTHDATE (YYYY/MM/DD)', 'BIRTHDATE']:
+        elif any(k in c_str for k in ['YOB', 'BIRTH', 'DOB', 'AGE']):
             col_map[col] = 'YOB'
             
     df_renamed = df.rename(columns=col_map)
@@ -177,7 +177,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
     df = normalize_columns(df_raw.copy())
     df['YOB'] = df['YOB'].apply(extract_year)
     
-    # Strictly identify Open vs U23/U18 columns
+    # Robustly isolate Open vs U23/U18 columns
     open_race_cols = [c for c in df.columns if 'OPEN_R' in c.upper() and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
     u23_18_race_cols = [c for c in df.columns if ('U23_18_R' in c.upper() or 'JUNIOR_R' in c.upper()) and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
 
@@ -186,7 +186,9 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
     if not u23_18_race_cols:
         u23_18_race_cols = [c for c in race_cols if 'U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()]
         
-    all_active_races = open_race_cols + u23_18_race_cols
+    all_active_races = list(dict.fromkeys(open_race_cols + u23_18_race_cols))
+    if not all_active_races:
+        all_active_races = race_cols
 
     event_standard_map = {
         'K1M': 'MK1', "MEN'S K1": 'MK1', "MEN'S KAYAK": 'MK1',
@@ -197,14 +199,14 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
     df['EVENT'] = df['EVENT'].apply(lambda ev: event_standard_map.get(str(ev).strip().upper(), str(ev).strip().upper()))
 
     for rc in all_active_races:
-        df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
+        if rc in df.columns:
+            df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
 
-    # Build session day groups for base scores (R1&R2, R3&R4, R5&R6 per series)
+    # Paired session day groups (R1&R2, R3&R4, R5&R6)
     def make_day_groups(series_cols):
         groups = {}
         sorted_cols = sorted(series_cols)
         for i, rc in enumerate(sorted_cols):
-            # Pair consecutive races (0&1 -> day 1, 2&3 -> day 2, 4&5 -> day 3)
             pair_idx = i // 2
             start = pair_idx * 2
             day_group = sorted_cols[start:start+2] if start+2 <= len(sorted_cols) else [sorted_cols[-1]]
@@ -226,6 +228,9 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
         pps_col = f'{rc}_PPS'
         pps_list = []
         for _, row in df.iterrows():
+            if rc not in row:
+                pps_list.append(np.nan)
+                continue
             time_val = pd.to_numeric(row.get(rc), errors='coerce')
             if pd.isna(time_val) or time_val >= 900:
                 pps_list.append(np.nan)
@@ -234,6 +239,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
                 pps_list.append(round(pps, 3))
         df[pps_col] = pps_list
 
+    # Precise ICF Age Categories
     categories = {
         'OPEN': (lambda df_sub: df_sub[(selection_year - df_sub['YOB']) >= 15], open_race_cols),
         'U23': (lambda df_sub: df_sub[((selection_year - df_sub['YOB']) <= 23) & ((selection_year - df_sub['YOB']) >= 15)], u23_18_race_cols),
@@ -259,6 +265,9 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
                 race_pts_map = {}
                 session_res = []
                 for idx, row in eg.iterrows():
+                    if rc not in row:
+                        race_pts_map[idx] = 999
+                        continue
                     time_val = pd.to_numeric(row.get(rc), errors='coerce')
                     if pd.isna(time_val) or time_val >= 900:
                         race_pts_map[idx] = 999
@@ -286,38 +295,4 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
                 r_pps = []
                 satisfied_count = 0
                 
-                for rc in cat_races:
-                    r_pts.append(row[f'{rc}_PTS'])
-                    pps_val = row[f'{rc}_PPS']
-                    r_pps.append(pps_val)
-                    
-                    if pd.notna(pps_val) and pps_val <= cat_mps:
-                        satisfied_count += 1
-                
-                r_pts_sorted = sorted(r_pts)
-                count_limit = 4
-                
-                best_pts = r_pts_sorted[:count_limit] if len(r_pts_sorted) >= count_limit else r_pts_sorted
-                tot_p = int(round(sum(best_pts))) if any(p < 900 for p in best_pts) else 999
-                total_points.append(tot_p)
-                
-                valid_pps = [p for p in r_pps if pd.notna(p)]
-                valid_pps.sort()
-                best_pps = valid_pps[:count_limit] if len(valid_pps) >= count_limit else valid_pps
-                avg_pps = sum(best_pps) / len(best_pps) if best_pps else np.nan
-                avg_pps_list.append(round(avg_pps, 2) if pd.notna(avg_pps) else np.nan)
-                mps_satisfied_counts.append(satisfied_count)
-                
-            eg['TOTAL_POINTS'] = total_points
-            eg['AVG_BEST4_PPS'] = avg_pps_list
-            eg['MPS_SATISFIED_COUNT'] = mps_satisfied_counts
-            
-            eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
-            eg['RANK'] = range(1, len(eg) + 1)
-            display_cat_name = 'Open' if cat_name == 'OPEN' else cat_name
-            all_rankings[event_name][display_cat_name] = eg
-
-    all_rankings['_BASE_SCORES'] = base_scores
-    all_rankings['_BASE_BREAKDOWNS'] = base_breakdowns
-
-    return all_rankings
+                for rc in cat_r
