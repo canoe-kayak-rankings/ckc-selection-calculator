@@ -213,10 +213,17 @@ def run_selection_calculator(comp_year_int):
         times = [v['time'] for v in disc_best.values() if v is not None]
         return round(sum(times) / len(times), 2) if len(times) == 4 else np.nan, disc_best
 
-    day_groups = {rc: [rc] for rc in active_race_cols}
+    # Separate race columns for Open vs U23/U18 if decoupled (e.g. 2027) or use all for both if shared
+    open_race_cols = [rc for rc in active_race_cols if any(k in rc.upper() for k in ['OPEN', 'SENIOR', 'SR'])]
+    u23_race_cols = [rc for rc in active_race_cols if any(k in rc.upper() for k in ['U23', 'U18', 'JUNIOR', 'JR'])]
+    
+    if not open_race_cols and not u23_race_cols:
+        open_race_cols = active_race_cols
+        u23_race_cols = active_race_cols
+
     base_scores, base_breakdowns = {}, {}
     for rc in active_race_cols:
-        b, d = calculate_base(df, day_groups.get(rc, [rc]))
+        b, d = calculate_base(df, [rc])
         base_scores[rc], base_breakdowns[rc] = b, d
         df[f'{rc}_PPS'] = df[rc].apply(lambda t: round((float(t)/b)*100, 3) if pd.notna(pd.to_numeric(t, errors='coerce')) and float(t)<900 and b else np.nan)
 
@@ -246,11 +253,12 @@ def run_selection_calculator(comp_year_int):
                 processed_rankings[evt][c_name] = pd.DataFrame()
                 continue
                 
-            for rc in active_race_cols:
+            cat_race_cols = open_race_cols if c_name == 'Open' else u23_race_cols
+            for rc in cat_race_cols:
                 pts_map = {}
                 session_res = []
                 for i, r in sub_df.iterrows():
-                    if c_name in ['U23', 'U18'] and comp_year_int == 2026 and active_race_cols.index(rc) == 0:
+                    if c_name in ['U23', 'U18'] and comp_year_int == 2026 and cat_race_cols.index(rc) == 0:
                         pts_map[i] = 999
                         continue
                     t = pd.to_numeric(r.get(rc), errors='coerce')
@@ -265,8 +273,8 @@ def run_selection_calculator(comp_year_int):
             cat_mps = mps_dict.get((evt.upper(), c_name.upper()), 105.0)
             for _, r in sub_df.iterrows():
                 pts, ppss, sat = [], [], 0
-                for rc in active_race_cols:
-                    if c_name in ['U23', 'U18'] and comp_year_int == 2026 and active_race_cols.index(rc) == 0: continue
+                for rc in cat_race_cols:
+                    if c_name in ['U23', 'U18'] and comp_year_int == 2026 and cat_race_cols.index(rc) == 0: continue
                     pts.append(r.get(f'{rc}_PTS', 999))
                     pps_v = r.get(f'{rc}_PPS', np.nan)
                     if pd.notna(pps_v):
@@ -285,17 +293,29 @@ def run_selection_calculator(comp_year_int):
             sub_df['RANK'] = range(1, len(sub_df)+1)
             processed_rankings[evt][c_name] = sub_df
 
-    st.markdown(f"### 📊 {year_str} 4-Boat Base Score Breakdown (with Table 5 Correction Factors)")
-    b_data = []
-    for rc in active_race_cols:
+    st.markdown(f"### 📊 {year_str} 4-Boat Base Score Breakdown (Open Series)")
+    open_b_data = []
+    for rc in open_race_cols:
         bv = base_scores.get(rc, np.nan)
         det = base_breakdowns.get(rc, {})
         row = {"Race": rc, "Base Score": f"{bv:.2f}" if pd.notna(bv) else "N/A"}
         for d in ['MK1', 'WK1', 'MC1', 'WC1']:
             info = det.get(d)
             row[d] = f"{info['athlete']} ({info['time']:.2f}s) [{info['race_col']}]" if info else "No Time"
-        b_data.append(row)
-    st.dataframe(pd.DataFrame(b_data), hide_index=True, use_container_width=True)
+        open_b_data.append(row)
+    st.dataframe(pd.DataFrame(open_b_data), hide_index=True, use_container_width=True)
+
+    st.markdown(f"### 📊 {year_str} 4-Boat Base Score Breakdown (U23 / U18 Series)")
+    u23_b_data = []
+    for rc in u23_race_cols:
+        bv = base_scores.get(rc, np.nan)
+        det = base_breakdowns.get(rc, {})
+        row = {"Race": rc, "Base Score": f"{bv:.2f}" if pd.notna(bv) else "N/A"}
+        for d in ['MK1', 'WK1', 'MC1', 'WC1']:
+            info = det.get(d)
+            row[d] = f"{info['athlete']} ({info['time']:.2f}s) [{info['race_col']}]" if info else "No Time"
+        u23_b_data.append(row)
+    st.dataframe(pd.DataFrame(u23_b_data), hide_index=True, use_container_width=True)
     st.markdown("---")
 
     tabs = st.tabs(list(events_list) + ["Nominations Summary"])
@@ -312,9 +332,10 @@ def run_selection_calculator(comp_year_int):
                         st.info(f"No eligible athletes in {c_name}.")
                         continue
                         
+                    cat_race_cols = open_race_cols if c_name == 'Open' else u23_race_cols
                     cat_mps = mps_dict.get((evt.upper(), c_name.upper()), 105.0)
-                    pps_cols = [f"{rc}_PPS" for rc in active_race_cols if f"{rc}_PPS" in sub_df.columns]
-                    disp_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', f'AVG_BEST{best_races_count}_PPS'] + active_race_cols + pps_cols
+                    pps_cols = [f"{rc}_PPS" for rc in cat_race_cols if f"{rc}_PPS" in sub_df.columns]
+                    disp_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', f'AVG_BEST{best_races_count}_PPS'] + cat_race_cols + pps_cols
                     available_disp = [c for c in disp_cols if c in sub_df.columns]
                     
                     def highlight_mps(val):
@@ -327,7 +348,7 @@ def run_selection_calculator(comp_year_int):
                         return ''
 
                     pps_subset = [c for c in pps_cols if c in available_disp]
-                    fmt_map = {col: safe_fmt for col in active_race_cols + pps_subset + [f'AVG_BEST{best_races_count}_PPS']}
+                    fmt_map = {col: safe_fmt for col in cat_race_cols + pps_subset + [f'AVG_BEST{best_races_count}_PPS']}
                     
                     styled_df = sub_df[available_disp].style.map(
                         highlight_mps, 
@@ -385,7 +406,6 @@ def run_selection_calculator(comp_year_int):
                             "Status / Role": "Nominee"
                         })
                     
-                    # If U23, check for U18 overlap and include alternate in summary table if activated
                     if c_name == 'U23':
                         u18_df = processed_rankings[evt].get('U18', pd.DataFrame())
                         valid_u18 = set(u18_df[u18_df['MPS_SATISFIED_COUNT'] > 0].head(3)['ATHLETE'].tolist()) if not u18_df.empty else set()
