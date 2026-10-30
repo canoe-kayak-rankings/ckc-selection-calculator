@@ -177,7 +177,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
     df = normalize_columns(df_raw.copy())
     df['YOB'] = df['YOB'].apply(extract_year)
     
-    # Robustly isolate Open vs U23/U18 columns
     open_race_cols = [c for c in df.columns if 'OPEN_R' in c.upper() and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
     u23_18_race_cols = [c for c in df.columns if ('U23_18_R' in c.upper() or 'JUNIOR_R' in c.upper()) and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
 
@@ -202,7 +201,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
         if rc in df.columns:
             df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
 
-    # Paired session day groups (R1&R2, R3&R4, R5&R6)
+    # Pair competition day sessions (R1&R2, R3&R4, R5&R6 per series)
     def make_day_groups(series_cols):
         groups = {}
         sorted_cols = sorted(series_cols)
@@ -239,7 +238,7 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
                 pps_list.append(round(pps, 3))
         df[pps_col] = pps_list
 
-    # Precise ICF Age Categories
+    # ICF Age Category Filtering
     categories = {
         'OPEN': (lambda df_sub: df_sub[(selection_year - df_sub['YOB']) >= 15], open_race_cols),
         'U23': (lambda df_sub: df_sub[((selection_year - df_sub['YOB']) <= 23) & ((selection_year - df_sub['YOB']) >= 15)], u23_18_race_cols),
@@ -295,4 +294,39 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
                 r_pps = []
                 satisfied_count = 0
                 
-                for rc in cat_r
+                for rc in cat_races:
+                    if f'{rc}_PTS' in row:
+                        r_pts.append(row[f'{rc}_PTS'])
+                    if f'{rc}_PPS' in row:
+                        pps_val = row[f'{rc}_PPS']
+                        r_pps.append(pps_val)
+                        if pd.notna(pps_val) and pps_val <= cat_mps:
+                            satisfied_count += 1
+                
+                r_pts_sorted = sorted(r_pts)
+                count_limit = 4
+                
+                best_pts = r_pts_sorted[:count_limit] if len(r_pts_sorted) >= count_limit else r_pts_sorted
+                tot_p = int(round(sum(best_pts))) if any(p < 900 for p in best_pts) else 999
+                total_points.append(tot_p)
+                
+                valid_pps = [p for p in r_pps if pd.notna(p)]
+                valid_pps.sort()
+                best_pps = valid_pps[:count_limit] if len(valid_pps) >= count_limit else valid_pps
+                avg_pps = sum(best_pps) / len(best_pps) if best_pps else np.nan
+                avg_pps_list.append(round(avg_pps, 2) if pd.notna(avg_pps) else np.nan)
+                mps_satisfied_counts.append(satisfied_count)
+                
+            eg['TOTAL_POINTS'] = total_points
+            eg['AVG_BEST4_PPS'] = avg_pps_list
+            eg['MPS_SATISFIED_COUNT'] = mps_satisfied_counts
+            
+            eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
+            eg['RANK'] = range(1, len(eg) + 1)
+            display_cat_name = 'Open' if cat_name == 'OPEN' else cat_name
+            all_rankings[event_name][display_cat_name] = eg
+
+    all_rankings['_BASE_SCORES'] = base_scores
+    all_rankings['_BASE_BREAKDOWNS'] = base_breakdowns
+
+    return all_rankings
