@@ -259,5 +259,54 @@ else:
                             valid_n = df_c[df_c['MPS_SATISFIED_COUNT'] > 0].head(3)
                             for _, r in valid_n.iterrows():
                                 nom_rows.append({
-                                    "Event": evt, "Rank": r['RANK'], "Athlete": r['ATHLETE'],
-                                    "Province": r['PROVINCE'], "YOB": r['YOB'],
+                                    "Event": evt, 
+                                    "Rank": r['RANK'], 
+                                    "Athlete": r['ATHLETE'],
+                                    "Province": r['PROVINCE'], 
+                                    "YOB": r['YOB'],
+                                    "Total Points": r['TOTAL_POINTS'], 
+                                    "MPS Count": r['MPS_SATISFIED_COUNT']
+                                })
+                    if nom_rows:
+                        st.dataframe(pd.DataFrame(nom_rows), hide_index=True, use_container_width=True)
+                    else:
+                        st.info(f"No athletes met MPS requirements for {c_name} nomination.")
+
+        except Exception as e:
+            st.error(f"Error processing 2026 file: {e}")
+
+    # ==========================================
+    # 2027 SELECTION CALCULATOR MODULE
+    # ==========================================
+    def run_2027():
+        st.title("🇨🇦 Canoe Kayak Canada - 2027 National Team Selection Calculator")
+        st.markdown("2027 Season: Decoupled Open vs U23/U18 race series, best 4 of 6, and official ICF age-filtering rules.")
+
+        year_path = os.path.join(DATA_DIR, "2027")
+        os.makedirs(year_path, exist_ok=True)
+        year_files = [f for f in os.listdir(year_path) if f.endswith(('.xlsx', '.csv')) and not f.startswith('~$')]
+
+        if not year_files:
+            st.info("No results files found in `data/2027/`.")
+            return
+
+        target_file = os.path.join(year_path, year_files[0])
+        st.caption(f"📁 Loading 2027 selection data from: `2027/{year_files[0]}`")
+        
+        try:
+            if target_file.endswith('.xlsx'):
+                xls = pd.ExcelFile(target_file)
+                sheet_names = [s for s in xls.sheet_names if 'MPS' not in s.upper()]
+                sheet_name = st.selectbox("Select Results Sheet", sheet_names, key="sheet_2027") if len(sheet_names) > 1 else sheet_names[0]
+                df_raw = pd.read_excel(target_file, sheet_name=sheet_name)
+            else:
+                df_raw = pd.read_csv(target_file)
+                
+            df = df_raw.copy()
+            col_map = {}
+            for col in df.columns:
+                c_str = str(col).strip().upper()
+                if c_str in ['EVENT', 'DISCIPLINE', 'LONG EVENT']: col_map[col] = 'EVENT'
+                elif c_str in ['RACER', 'ATHLETE', 'NAME', 'FULL NAME']: col_map[col] = 'ATHLETE'
+                elif c_str in ['CATEGORY', 'AGE GROUP', 'AGE_GROUP', 'CLASS']: col_map[col] = 'CATEGORY'
+                elif c_str in ['PROVINCE', 'PROV', 'PRO']: col_map[col] = 'PROVINCE'
