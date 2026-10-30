@@ -331,13 +331,14 @@ def run_selection_calculator(comp_year_int):
                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
                     st.caption(f"🟢 Highlighted cells indicate individual selection races satisfying the {c_name} {evt} MPS threshold (≤ {cat_mps:.3f}%).")
                     
-                    status_label = "Official" if is_official else "Provisional"
+                   status_label = "Official" if is_official else "Provisional"
                     valid_nominees = sub_df[sub_df['MPS_SATISFIED_COUNT'] > 0].head(3)
                     st.markdown(f"**{status_label} Top 3 Nominations ({evt} - {c_name}):**")
                     if not valid_nominees.empty:
                         if c_name == 'U23':
                             u18_df = processed_rankings[evt].get('U18', pd.DataFrame())
                             valid_u18 = set(u18_df[u18_df['MPS_SATISFIED_COUNT'] > 0].head(3)['ATHLETE'].tolist()) if not u18_df.empty else set()
+                            
                             valid_u23_pool = sub_df[sub_df['MPS_SATISFIED_COUNT'] > 0]
                             u23_nominees = valid_u23_pool.head(3)
                             nom_names = set(u23_nominees['ATHLETE'].tolist())
@@ -349,8 +350,9 @@ def run_selection_calculator(comp_year_int):
                                 st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row[f'AVG_BEST{best_races_count}_PPS'])}%{tag}")
                             
                             if overlap:
+                                # Draw alternate from the full sorted U23 standings (sub_df), excluding top 3 U23 nominees and U18 nominees
                                 excluded_names = nom_names.union(valid_u18)
-                                alt_pool = valid_u23_pool[~valid_u23_pool['ATHLETE'].isin(excluded_names)]
+                                alt_pool = sub_df[~sub_df['ATHLETE'].isin(excluded_names)]
                                 if not alt_pool.empty:
                                     alt = alt_pool.iloc[0]
                                     st.markdown(f"**🔄 U23 Team Alternate (Activated due to Junior team double-qualification):**")
