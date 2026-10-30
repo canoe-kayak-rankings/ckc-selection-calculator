@@ -14,7 +14,7 @@ def normalize_columns(df):
             col_map[col] = 'CATEGORY'
         elif c_str in ['PROVINCE', 'PROV', 'PRO']:
             col_map[col] = 'PROVINCE'
-        elif c_str in ['YOB', 'BIRTHYEAR', 'YEAR OF BIRTH', 'BIRTHDATE (YYYY/MM/DD)', 'BIRTHDATE']:
+        elif any(k in c_str for k in ['YOB', 'BIRTH', 'DOB', 'AGE']):
             col_map[col] = 'YOB'
             
     df_renamed = df.rename(columns=col_map)
@@ -94,7 +94,7 @@ def load_mps_lookup(target_file):
                     except:
                         pass
     except Exception as e:
-        print(f"Could not load MPS sheet: {e}")
+        print(f"Could not load MPS sheet for 2026: {e}")
         
     return mps_dict, status
 
@@ -133,6 +133,8 @@ def calculate_race_day_base_details(df_all_events, day_race_cols):
         clean_recs = []
         for _, r in disc_rows.iterrows():
             for rc in day_race_cols:
+                if rc not in r:
+                    continue
                 t = pd.to_numeric(r.get(rc), errors='coerce')
                 if pd.notna(t) and t < 900:
                     rec = {'athlete': r.get('ATHLETE', 'Unknown'), 'time': t, 'race_col': rc}
@@ -174,9 +176,6 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
     df = normalize_columns(df_raw.copy())
     df['YOB'] = df['YOB'].apply(extract_year)
     
-    if selection_year == 2026:
-        df = df[df['YOB'] < 2012].copy()
-    
     active_race_cols = []
     for i, rc in enumerate(race_cols):
         race_idx = i + 1
@@ -193,7 +192,8 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
     df['EVENT'] = df['EVENT'].apply(lambda ev: event_standard_map.get(str(ev).strip().upper(), str(ev).strip().upper()))
 
     for rc in active_race_cols:
-        df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
+        if rc in df.columns:
+            df[rc] = pd.to_numeric(df[rc], errors='coerce').apply(lambda x: round(x, 2) if pd.notna(x) and x < 900 else x)
 
     race_day_groups = {}
     if len(active_race_cols) >= 1:
@@ -211,16 +211,17 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
     base_scores = {}
     base_breakdowns = {}
     for rc in active_race_cols:
-        day_cols = race_day_groups[rc]
+        day_cols = race_day_groups.get(rc, [rc])
         b_score, b_details = calculate_race_day_base_details(df, day_cols)
         base_scores[rc] = b_score
         base_breakdowns[rc] = b_details
 
-    for rc in active_race_cols:
-        b_score = base_scores.get(rc, np.nan)
         pps_col = f'{rc}_PPS'
         pps_list = []
         for _, row in df.iterrows():
+            if rc not in row:
+                pps_list.append(np.nan)
+                continue
             time_val = pd.to_numeric(row.get(rc), errors='coerce')
             if pd.isna(time_val) or time_val >= 900:
                 pps_list.append(np.nan)
@@ -229,18 +230,11 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
                 pps_list.append(round(pps, 3))
         df[pps_col] = pps_list
 
-    if selection_year == 2026:
-        categories = {
-            'OPEN': lambda df_sub: df_sub,
-            'U23': lambda df_sub: df_sub[(df_sub['YOB'] >= 2003) & (df_sub['YOB'] <= 2011)],
-            'U18': lambda df_sub: df_sub[(df_sub['YOB'] >= 2008) & (df_sub['YOB'] <= 2011)]
-        }
-    else:
-        categories = {
-            'OPEN': lambda df_sub: df_sub,
-            'U23': lambda df_sub: df_sub[(selection_year - df_sub['YOB']) < 23],
-            'U18': lambda df_sub: df_sub[(selection_year - df_sub['YOB']) < 18]
-        }
+    categories = {
+        'OPEN': lambda df_sub: df_sub,
+        'U23': lambda df_sub: df_sub[(selection_year - df_sub['YOB']) <= 23],
+        'U18': lambda df_sub: df_sub[(selection_year - df_sub['YOB']) <= 18]
+    }
 
     all_rankings = {}
     mps_dict = mps_dict or {}
@@ -261,11 +255,14 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
                 race_pts_map = {}
                 session_res = []
                 for idx, row in eg.iterrows():
-                    race_orig_idx = race_cols.index(rc) + 1
+                    race_orig_idx = active_race_cols.index(rc) + 1 if rc in active_race_cols else 1
                     if selection_year == 2026 and cat_name in ['U23', 'U18'] and race_orig_idx == 1:
                         race_pts_map[idx] = 999
                         continue
                         
+                    if rc not in row:
+                        race_pts_map[idx] = 999
+                        continue
                     time_val = pd.to_numeric(row.get(rc), errors='coerce')
                     if pd.isna(time_val) or time_val >= 900:
                         race_pts_map[idx] = 999
@@ -294,16 +291,17 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2026, mps_dict=
                 satisfied_count = 0
                 
                 for rc in active_race_cols:
-                    race_orig_idx = race_cols.index(rc) + 1
+                    race_orig_idx = active_race_cols.index(rc) + 1 if rc in active_race_cols else 1
                     if selection_year == 2026 and cat_name in ['U23', 'U18'] and race_orig_idx == 1:
                         continue 
                         
-                    r_pts.append(row[f'{rc}_PTS'])
-                    pps_val = row[f'{rc}_PPS']
-                    r_pps.append(pps_val)
-                    
-                    if pd.notna(pps_val) and pps_val <= cat_mps:
-                        satisfied_count += 1
+                    if f'{rc}_PTS' in row:
+                        r_pts.append(row[f'{rc}_PTS'])
+                    if f'{rc}_PPS' in row:
+                        pps_val = row[f'{rc}_PPS']
+                        r_pps.append(pps_val)
+                        if pd.notna(pps_val) and pps_val <= cat_mps:
+                            satisfied_count += 1
                 
                 r_pts_sorted = sorted(r_pts)
                 count_limit = 3 if selection_year == 2026 else 4
