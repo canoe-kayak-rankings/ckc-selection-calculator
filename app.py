@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import os
 from io import BytesIO
-from engine import process_selection_rankings, load_mps_lookup
 
 st.set_page_config(
     page_title="CKC National Team Selection Calculator",
@@ -20,12 +19,18 @@ os.makedirs(DATA_DIR, exist_ok=True)
 year_folders = [f for f in sorted(os.listdir(DATA_DIR), reverse=True) if os.path.isdir(os.path.join(DATA_DIR, f))]
 
 if not year_folders:
-    st.warning(f"No year folders found in `{DATA_DIR}`. Create a folder like `data/2026/` and add your selection spreadsheet.")
+    st.warning(f"No year folders found in `{DATA_DIR}`. Create a folder like `data/2026/` or `data/2027/` and add your selection spreadsheet.")
 else:
     col_yr, _ = st.columns([1, 2])
     with col_yr:
         selected_year = st.selectbox("📅 Select Competition Year", year_folders)
         
+    # Dynamic Engine Import based on selected competition year
+    if selected_year == "2027":
+        from engine_2027 import process_selection_rankings, load_mps_lookup
+    else:
+        from engine_2026 import process_selection_rankings, load_mps_lookup
+
     year_path = os.path.join(DATA_DIR, selected_year)
     year_files = [f for f in os.listdir(year_path) if f.endswith(('.xlsx', '.csv')) and not f.startswith('~$')]
     
@@ -43,19 +48,13 @@ else:
             else:
                 df_raw = pd.read_csv(target_file)
                 
-            potential_keywords = ['RACE', 'RUN', 'MH', 'OKC', 'DAY', 'SESSION']
+            potential_keywords = ['RACE', 'RUN', 'MH', 'OKC', 'DAY', 'SESSION', 'OPEN_R', 'U23_18_R']
             detected_races = [
                 c for c in df_raw.columns 
-                if any(k in str(c).upper() for k in potential_keywords) and 'RANK' not in str(c).upper() and 'PTS' not in str(c).upper()
+                if any(k in str(c).upper() for k in potential_keywords) and 'RANK' not in str(c).upper() and 'PTS' not in str(c).upper() and 'PEN' not in str(c).upper()
             ]
             
-            if len(detected_races) >= 6:
-                selected_races = detected_races[:6]
-            elif len(df_raw.columns) >= 6:
-                selected_races = df_raw.columns.tolist()[-6:]
-            else:
-                selected_races = df_raw.columns.tolist()
-                
+            selected_races = detected_races if detected_races else df_raw.columns.tolist()
             selection_year_int = int(selected_year)
             
             mps_dict, file_status = load_mps_lookup(target_file)
@@ -94,12 +93,7 @@ else:
                         st.markdown("### 4-Boat Base Score Breakdown (MK1, WK1, MC1, WC1)")
                         base_table_data = []
                         
-                        active_races_to_show = []
-                        for i, rc in enumerate(selected_races):
-                            race_idx = i + 1
-                            if selection_year_int == 2026 and race_idx == 6:
-                                continue
-                            active_races_to_show.append(rc)
+                        active_races_to_show = selected_races
                             
                         for rc in active_races_to_show:
                             b_val = base_scores.get(rc, np.nan)
@@ -129,20 +123,23 @@ else:
                         categories = ['Open', 'U23', 'U18']
                         
                         event_u18_df = rankings_dict[evt_name].get('U18', pd.DataFrame())
-                        valid_u18_athletes = set(event_u18_df[event_u18_df['MPS_SATISFIED_COUNT'] > 0].head(3)['ATHLETE'].tolist())
+                        valid_u18_athletes = set(event_u18_df[event_u18_df['MPS_SATISFIED_COUNT'] > 0].head(3)['ATHLETE'].tolist()) if not event_u18_df.empty else set()
                         
                         event_u23_df = rankings_dict[evt_name].get('U23', pd.DataFrame())
-                        valid_u23_pool = event_u23_df[event_u23_df['MPS_SATISFIED_COUNT'] > 0]
+                        valid_u23_pool = event_u23_df[event_u23_df['MPS_SATISFIED_COUNT'] > 0] if not event_u23_df.empty else pd.DataFrame()
                         
                         for cat_idx, cat_name in enumerate(categories):
                             with cat_tabs[cat_idx]:
                                 df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
                                 
                                 if not df_cat.empty:
-                                    race_time_cols = active_races_to_show
-                                    pps_cols = [f"{rc}_PPS" for rc in active_races_to_show if f"{rc}_PPS" in df_cat.columns]
+                                    cat_race_cols = [c for c in active_races_to_show if ('OPEN' in c.upper() if cat_name == 'Open' else ('U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()))]
+                                    if not cat_race_cols:
+                                        cat_race_cols = active_races_to_show
+                                        
+                                    pps_cols = [f"{rc}_PPS" for rc in cat_race_cols if f"{rc}_PPS" in df_cat.columns]
                                     
-                                    display_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + race_time_cols + pps_cols
+                                    display_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + cat_race_cols + pps_cols
                                     available_disp = [c for c in display_cols if c in df_cat.columns]
                                     
                                     cat_mps_val = mps_dict.get((evt_name.upper(), cat_name.upper()), 105.0)
@@ -157,7 +154,7 @@ else:
                                         return ''
 
                                     pps_subset = [c for c in pps_cols if c in available_disp]
-                                    format_dict = {col: "{:.2f}" for col in race_time_cols + pps_subset + ['AVG_BEST4_PPS']}
+                                    format_dict = {col: "{:.2f}" for col in cat_race_cols + pps_subset + ['AVG_BEST4_PPS']}
                                     
                                     styled_df = df_cat[available_disp].style.map(
                                         highlight_mps, 
@@ -170,8 +167,8 @@ else:
                                     status_label = "Official" if is_official else "Provisional"
                                     
                                     if cat_name == 'U23':
-                                        u23_nominees = valid_u23_pool.head(3)
-                                        nominated_names = set(u23_nominees['ATHLETE'].tolist())
+                                        u23_nominees = valid_u23_pool.head(3) if not valid_u23_pool.empty else pd.DataFrame()
+                                        nominated_names = set(u23_nominees['ATHLETE'].tolist()) if not u23_nominees.empty else set()
                                         overlap_athletes = nominated_names.intersection(valid_u18_athletes)
                                         
                                         st.markdown(f"**{status_label} Top 3 Nominations ({evt_name} - {cat_name}):**")
@@ -231,7 +228,7 @@ else:
                         
                         for evt_name in events_list:
                             df_u18 = rankings_dict[evt_name].get('U18', pd.DataFrame())
-                            v_u18_names = set(df_u18[df_u18['MPS_SATISFIED_COUNT'] > 0].head(3)['ATHLETE'].tolist())
+                            v_u18_names = set(df_u18[df_u18['MPS_SATISFIED_COUNT'] > 0].head(3)['ATHLETE'].tolist()) if not df_u18.empty else set()
                             
                             df_cat = rankings_dict[evt_name].get(cat_name, pd.DataFrame())
                             if not df_cat.empty:
