@@ -227,4 +227,78 @@ def process_selection_rankings(df_raw, race_cols, selection_year=2027, mps_dict=
     for event_name, event_group in df.groupby('EVENT'):
         all_rankings[event_name] = {}
         
-        for cat_name, (cat_filter_func, cat_races)
+        for cat_name, (cat_filter_func, cat_races) in categories.items():
+            eg = cat_filter_func(event_group).copy()
+            if eg.empty or not cat_races:
+                all_rankings[event_name][cat_name] = pd.DataFrame()
+                continue
+                
+            cat_mps = mps_dict.get((event_name.upper(), cat_name.upper()), 105.0)
+            
+            for rc in cat_races:
+                pts_col = f'{rc}_PTS'
+                race_pts_map = {}
+                session_res = []
+                for idx, row in eg.iterrows():
+                    time_val = pd.to_numeric(row.get(rc), errors='coerce')
+                    if pd.isna(time_val) or time_val >= 900:
+                        race_pts_map[idx] = 999
+                    else:
+                        session_res.append({'idx': idx, 'time': time_val})
+                
+                session_res.sort(key=lambda x: x['time'])
+                current_rank = 1
+                for i, res in enumerate(session_res):
+                    if i > 0 and session_res[i]['time'] == session_res[i-1]['time']:
+                        res['pts'] = session_res[i-1]['pts']
+                    else:
+                        res['pts'] = get_points_for_rank(current_rank)
+                    race_pts_map[res['idx']] = res['pts']
+                    current_rank += 1
+                
+                eg[pts_col] = [race_pts_map.get(idx, 999) for idx in eg.index]
+
+            total_points = []
+            avg_pps_list = []
+            mps_satisfied_counts = []
+            
+            for _, row in eg.iterrows():
+                r_pts = []
+                r_pps = []
+                satisfied_count = 0
+                
+                for rc in cat_races:
+                    r_pts.append(row[f'{rc}_PTS'])
+                    pps_val = row[f'{rc}_PPS']
+                    r_pps.append(pps_val)
+                    
+                    if pd.notna(pps_val) and pps_val <= cat_mps:
+                        satisfied_count += 1
+                
+                r_pts_sorted = sorted(r_pts)
+                count_limit = 4
+                
+                best_pts = r_pts_sorted[:count_limit] if len(r_pts_sorted) >= count_limit else r_pts_sorted
+                tot_p = int(round(sum(best_pts))) if any(p < 900 for p in best_pts) else 999
+                total_points.append(tot_p)
+                
+                valid_pps = [p for p in r_pps if pd.notna(p)]
+                valid_pps.sort()
+                best_pps = valid_pps[:count_limit] if len(valid_pps) >= count_limit else valid_pps
+                avg_pps = sum(best_pps) / len(best_pps) if best_pps else np.nan
+                avg_pps_list.append(round(avg_pps, 2) if pd.notna(avg_pps) else np.nan)
+                mps_satisfied_counts.append(satisfied_count)
+                
+            eg['TOTAL_POINTS'] = total_points
+            eg['AVG_BEST4_PPS'] = avg_pps_list
+            eg['MPS_SATISFIED_COUNT'] = mps_satisfied_counts
+            
+            eg = eg.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS'], ascending=[True, True]).reset_index(drop=True)
+            eg['RANK'] = range(1, len(eg) + 1)
+            display_cat_name = 'Open' if cat_name == 'OPEN' else cat_name
+            all_rankings[event_name][display_cat_name] = eg
+
+    all_rankings['_BASE_SCORES'] = base_scores
+    all_rankings['_BASE_BREAKDOWNS'] = base_breakdowns
+
+    return all_rankings
