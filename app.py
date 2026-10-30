@@ -140,7 +140,6 @@ def run_selection_calculator(comp_year_int):
 
     df['YOB'] = df['YOB'].apply(extract_year)
 
-    # Strictly enforce ICF minimum age rule: must turn at least 15 in the competition year
     max_yob_allowed = comp_year_int - 15
     df = df[df['YOB'] <= max_yob_allowed].copy()
 
@@ -214,10 +213,7 @@ def run_selection_calculator(comp_year_int):
         times = [v['time'] for v in disc_best.values() if v is not None]
         return round(sum(times) / len(times), 2) if len(times) == 4 else np.nan, disc_best
 
-    day_groups = {}
-    for i, rc in enumerate(active_race_cols):
-        day_groups[rc] = [rc]
-
+    day_groups = {rc: [rc] for rc in active_race_cols}
     base_scores, base_breakdowns = {}, {}
     for rc in active_race_cols:
         b, d = calculate_base(df, day_groups.get(rc, [rc]))
@@ -235,6 +231,60 @@ def run_selection_calculator(comp_year_int):
         st.error("No event categories found in spreadsheet.")
         return
 
+    best_races_count = 3 if comp_year_int == 2026 else 4
+
+    # ==========================================
+    # PRE-COMPUTE ALL RANKINGS FOR ALL EVENTS & CATEGORIES FIRST
+    # ==========================================
+    processed_rankings = {}
+    for evt in events_list:
+        processed_rankings[evt] = {}
+        evt_grp = df[df['EVENT'] == evt]
+        for c_name in ['Open', 'U23', 'U18']:
+            sub_df = categories[c_name](evt_grp).copy()
+            if sub_df.empty:
+                processed_rankings[evt][c_name] = pd.DataFrame()
+                continue
+                
+            for rc in active_race_cols:
+                pts_map = {}
+                session_res = []
+                for i, r in sub_df.iterrows():
+                    if c_name in ['U23', 'U18'] and comp_year_int == 2026 and active_race_cols.index(rc) == 0:
+                        pts_map[i] = 999
+                        continue
+                    t = pd.to_numeric(r.get(rc), errors='coerce')
+                    if pd.isna(t) or t >= 900: pts_map[i] = 999
+                    else: session_res.append({'idx': i, 'time': t})
+                session_res.sort(key=lambda x: x['time'])
+                for r_i, sr in enumerate(session_res):
+                    pts_map[sr['idx']] = 0 if r_i==0 else (2 if r_i==1 else r_i+1)
+                sub_df[f'{rc}_PTS'] = [pts_map.get(i, 999) for i in sub_df.index]
+                
+            tot_pts, avg_pps, mps_cnt = [], [], []
+            cat_mps = mps_dict.get((evt.upper(), c_name.upper()), 105.0)
+            for _, r in sub_df.iterrows():
+                pts, ppss, sat = [], [], 0
+                for rc in active_race_cols:
+                    if c_name in ['U23', 'U18'] and comp_year_int == 2026 and active_race_cols.index(rc) == 0: continue
+                    pts.append(r.get(f'{rc}_PTS', 999))
+                    pps_v = r.get(f'{rc}_PPS', np.nan)
+                    if pd.notna(pps_v):
+                        ppss.append(pps_v)
+                        if pps_v <= cat_mps: sat += 1
+                best_p = sorted(pts)[:best_races_count]
+                tot_pts.append(int(round(sum(best_p))) if any(p < 900 for p in best_p) else 999)
+                best_pps = sorted(ppss)[:best_races_count]
+                avg_pps.append(round(sum(best_pps)/len(best_pps), 2) if best_pps else np.nan)
+                mps_cnt.append(sat)
+                
+            sub_df['TOTAL_POINTS'] = tot_pts
+            sub_df[f'AVG_BEST{best_races_count}_PPS'] = avg_pps
+            sub_df['MPS_SATISFIED_COUNT'] = mps_cnt
+            sub_df = sub_df.sort_values(by=['TOTAL_POINTS', f'AVG_BEST{best_races_count}_PPS']).reset_index(drop=True)
+            sub_df['RANK'] = range(1, len(sub_df)+1)
+            processed_rankings[evt][c_name] = sub_df
+
     st.markdown(f"### 📊 {year_str} 4-Boat Base Score Breakdown (with Table 5 Correction Factors)")
     b_data = []
     for rc in active_race_cols:
@@ -249,64 +299,20 @@ def run_selection_calculator(comp_year_int):
     st.markdown("---")
 
     tabs = st.tabs(list(events_list) + ["Nominations Summary"])
-    processed_rankings = {}
-
-    best_races_count = 3 if comp_year_int == 2026 else 4
 
     for idx, evt in enumerate(events_list):
-        processed_rankings[evt] = {}
         with tabs[idx]:
             st.markdown(f"### {year_str} - {evt} Team Selection Standings")
             cat_tabs = st.tabs(["Open", "U23", "U18"])
-            evt_grp = df[df['EVENT'] == evt]
             
             for c_idx, c_name in enumerate(['Open', 'U23', 'U18']):
                 with cat_tabs[c_idx]:
-                    sub_df = categories[c_name](evt_grp).copy()
+                    sub_df = processed_rankings[evt].get(c_name, pd.DataFrame())
                     if sub_df.empty:
                         st.info(f"No eligible athletes in {c_name}.")
-                        processed_rankings[evt][c_name] = pd.DataFrame()
                         continue
                         
-                    for rc in active_race_cols:
-                        pts_map = {}
-                        session_res = []
-                        for i, r in sub_df.iterrows():
-                            if c_name in ['U23', 'U18'] and comp_year_int == 2026 and active_race_cols.index(rc) == 0:
-                                pts_map[i] = 999
-                                continue
-                            t = pd.to_numeric(r.get(rc), errors='coerce')
-                            if pd.isna(t) or t >= 900: pts_map[i] = 999
-                            else: session_res.append({'idx': i, 'time': t})
-                        session_res.sort(key=lambda x: x['time'])
-                        for r_i, sr in enumerate(session_res):
-                            pts_map[sr['idx']] = 0 if r_i==0 else (2 if r_i==1 else r_i+1)
-                        sub_df[f'{rc}_PTS'] = [pts_map.get(i, 999) for i in sub_df.index]
-                        
-                    tot_pts, avg_pps, mps_cnt = [], [], []
                     cat_mps = mps_dict.get((evt.upper(), c_name.upper()), 105.0)
-                    for _, r in sub_df.iterrows():
-                        pts, ppss, sat = [], [], 0
-                        for rc in active_race_cols:
-                            if c_name in ['U23', 'U18'] and comp_year_int == 2026 and active_race_cols.index(rc) == 0: continue
-                            pts.append(r.get(f'{rc}_PTS', 999))
-                            pps_v = r.get(f'{rc}_PPS', np.nan)
-                            if pd.notna(pps_v):
-                                ppss.append(pps_v)
-                                if pps_v <= cat_mps: sat += 1
-                        best_p = sorted(pts)[:best_races_count]
-                        tot_pts.append(int(round(sum(best_p))) if any(p < 900 for p in best_p) else 999)
-                        best_pps = sorted(ppss)[:best_races_count]
-                        avg_pps.append(round(sum(best_pps)/len(best_pps), 2) if best_pps else np.nan)
-                        mps_cnt.append(sat)
-                        
-                    sub_df['TOTAL_POINTS'] = tot_pts
-                    sub_df[f'AVG_BEST{best_races_count}_PPS'] = avg_pps
-                    sub_df['MPS_SATISFIED_COUNT'] = mps_cnt
-                    sub_df = sub_df.sort_values(by=['TOTAL_POINTS', f'AVG_BEST{best_races_count}_PPS']).reset_index(drop=True)
-                    sub_df['RANK'] = range(1, len(sub_df)+1)
-                    processed_rankings[evt][c_name] = sub_df
-                    
                     pps_cols = [f"{rc}_PPS" for rc in active_race_cols if f"{rc}_PPS" in sub_df.columns]
                     disp_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', f'AVG_BEST{best_races_count}_PPS'] + active_race_cols + pps_cols
                     available_disp = [c for c in disp_cols if c in sub_df.columns]
