@@ -213,7 +213,6 @@ def run_2026():
         st.error("No event categories found in spreadsheet.")
         return
 
-    # Base Score Breakdown Table First
     st.markdown("### 📊 2026 4-Boat Base Score Breakdown")
     b_data = []
     for rc in active_race_cols:
@@ -362,4 +361,80 @@ def run_2026():
 # ==========================================
 def run_2027():
     st.title("🇨🇦 Canoe Kayak Canada - 2027 National Team Selection Calculator")
-    st.markdown("2027 Season: Decoupled Open vs U2
+    st.markdown("2027 Season: Decoupled Open vs U23/U18 race series, best 4 of 6, and official ICF age-filtering rules.")
+
+    df_raw, target_file = load_data_source("2027")
+    if df_raw is None:
+        return
+
+    df = df_raw.copy()
+    col_map = {}
+    for col in df.columns:
+        c_str = str(col).strip().upper()
+        if c_str in ['EVENT', 'DISCIPLINE', 'LONG EVENT', 'CLASS', 'CATEGORY']: col_map[col] = 'EVENT'
+        elif c_str in ['RACER', 'ATHLETE', 'NAME', 'FULL NAME', 'ATHLETE NAME']: col_map[col] = 'ATHLETE'
+        elif c_str in ['PROVINCE', 'PROV', 'PRO', 'CLUB', 'TEAM']: col_map[col] = 'PROVINCE'
+        elif any(k in c_str for k in ['YOB', 'BIRTH', 'DOB', 'AGE', 'YEAR OF BIRTH']): col_map[col] = 'YOB'
+    df = df.rename(columns=col_map)
+
+    if 'EVENT' not in df.columns: df['EVENT'] = 'MK1'
+    if 'ATHLETE' not in df.columns: df['ATHLETE'] = 'Unknown'
+    if 'PROVINCE' not in df.columns: df['PROVINCE'] = ''
+    if 'YOB' not in df.columns: df['YOB'] = 2000
+
+    def extract_year(val):
+        if pd.isna(val): return 2000
+        match = re.search(r'(19\d{2}|20\d{2})', str(val))
+        return int(match.group(1)) if match else 2000
+
+    df['YOB'] = df['YOB'].apply(extract_year)
+
+    open_race_cols = [c for c in df.columns if ('OPEN' in c.upper() or 'SENIOR' in c.upper()) and any(str(i) in c for i in range(1, 7)) and not any(w in str(c).upper() for w in ['RANK', 'PTS', '_PEN', 'PENALTY', 'FLAG'])]
+    u23_18_race_cols = [c for c in df.columns if ('U23' in c.upper() or '18' in c.upper() or 'JUNIOR' in c.upper()) and any(str(i) in c for i in range(1, 7)) and not any(w in str(c).upper() for w in ['RANK', 'PTS', '_PEN', 'PENALTY', 'FLAG'])]
+
+    if not open_race_cols:
+        open_race_cols = [c for c in df.columns if 'OPEN_R' in c.upper() and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
+    if not u23_18_race_cols:
+        u23_18_race_cols = [c for c in df.columns if ('U23_18_R' in c.upper() or 'JUNIOR_R' in c.upper()) and 'RANK' not in c.upper() and 'PTS' not in c.upper() and 'PEN' not in c.upper()]
+
+    all_active_races = list(dict.fromkeys(open_race_cols + u23_18_race_cols))
+    if not all_active_races:
+        all_active_races = [c for c in df.columns if 'RACE' in c.upper() or 'RUN' in c.upper()]
+        open_race_cols = all_active_races
+        u23_18_race_cols = all_active_races
+
+    event_standard_map = {
+        'K1M': 'MK1', "MEN'S K1": 'MK1', "MEN'S KAYAK": 'MK1',
+        'K1W': 'WK1', "WOMEN'S K1": 'WK1', "WOMEN'S KAYAK": 'WK1',
+        'C1M': 'MC1', "MEN'S C1": 'MC1', "MEN'S CANOE": 'MC1',
+        'C1W': 'WC1', "WOMEN'S C1": 'WC1', "WOMEN'S CANOE": 'WC1'
+    }
+    df['EVENT'] = df['EVENT'].apply(lambda ev: event_standard_map.get(str(ev).strip().upper(), str(ev).strip().upper()))
+
+    for rc in all_active_races:
+        if rc in df.columns:
+            df[rc] = pd.to_numeric(df[rc].astype(str).str.replace('DNS', '999').str.replace('DSQ', '999'), errors='coerce').fillna(999)
+
+    def make_day_groups(series_cols):
+        groups = {}
+        sorted_cols = sorted(series_cols)
+        for i, rc in enumerate(sorted_cols):
+            pair_idx = i // 2
+            start = pair_idx * 2
+            groups[rc] = sorted_cols[start:start+2] if start+2 <= len(sorted_cols) else [sorted_cols[-1]]
+        return groups
+
+    open_day_groups = make_day_groups(open_race_cols)
+    u23_18_day_groups = make_day_groups(u23_18_race_cols)
+    all_day_groups = {**open_day_groups, **u23_18_day_groups}
+
+    def calculate_base(df_all, day_race_cols):
+        discs = ['MK1', 'WK1', 'MC1', 'WC1']
+        alias = {'MK1': ['MK1', 'K1M'], 'WK1': ['WK1', 'K1W'], 'MC1': ['MC1', 'C1M'], 'WC1': ['WC1', 'C1W']}
+        disc_best = {}
+        for d in discs:
+            d_rows = df_all[df_all['EVENT'].str.strip().str.upper().isin([a.upper() for a in alias[d]])]
+            val_recs, clean_recs = [], []
+            for _, r in d_rows.iterrows():
+                for rc in day_race_cols:
+                    if rc not in r:
