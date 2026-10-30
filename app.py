@@ -34,13 +34,25 @@ with st.sidebar:
 
 def has_50s_penalty(row, rc, all_cols):
     rc_str = str(rc).strip().upper()
+    # Check explicit {rc}_PEN50 column (standard in 2026/2027 spreadsheets)
+    pen_col_name = f"{rc}_PEN50"
+    if pen_col_name in row:
+        val = row.get(pen_col_name)
+        if pd.notna(val):
+            val_str = str(val).strip().upper()
+            if val_str not in ['NAN', 'NONE', '', '0', '0.0', 'FALSE']:
+                return True
+                
+    # Check general penalty columns
     for col in all_cols:
         col_u = str(col).strip().upper()
-        if rc_str in col_u and any(k in col_u for k in ['_PEN', 'PENALTY', 'FLAG', '_50']):
+        if rc_str in col_u and any(k in col_u for k in ['PEN', 'FLAG', '50']):
             if col_u != rc_str:
-                val = str(row.get(col)).strip().upper()
-                if val not in ['NAN', 'NONE', ''] and val in ['50', 'Y', 'YES', 'TRUE', 'PEN50', 'X', '50.0', '1', '1.0']:
-                    return True
+                val = row.get(col)
+                if pd.notna(val):
+                    val_str = str(val).strip().upper()
+                    if val_str not in ['NAN', 'NONE', '', '0', '0.0', 'FALSE']:
+                        return True
     return False
 
 def safe_fmt(val):
@@ -633,7 +645,4 @@ def run_2027():
                 st.info(f"No athletes met MPS requirements for {c_name} nomination.")
 
 # Router Dispatch
-if selected_year == "2026":
-    run_2026()
-elif selected_year == "2027":
-    run_2027()
+if selected_year ==
