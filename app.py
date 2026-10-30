@@ -16,19 +16,14 @@ def find_results_file(year_str):
         os.path.join(os.path.dirname(__file__), "data"),
         os.path.dirname(__file__)
     ]
+    # Strict search: Only return a file if year_str is explicitly in the filename or folder name
     for d in search_dirs:
         if os.path.exists(d):
             for root, dirs, files in os.walk(d):
                 for f in files:
                     if f.endswith(('.xlsx', '.csv')) and not f.startswith('~$'):
-                        if year_str in f or year_str in root:
+                        if year_str in f or year_str in os.path.basename(root):
                             return os.path.join(root, f)
-    for d in search_dirs:
-        if os.path.exists(d):
-            for root, dirs, files in os.walk(d):
-                for f in files:
-                    if f.endswith(('.xlsx', '.csv')) and not f.startswith('~$'):
-                        return os.path.join(root, f)
     return None
 
 year_folders = ["2027", "2026"]
@@ -71,7 +66,7 @@ def load_data_source(year_str):
         else:
             return pd.read_csv(target_file), target_file
     
-    st.warning(f"⚠️ Could not automatically find a `{year_str}` file in repository folders.")
+    st.warning(f"⚠️ Could not automatically find a `{year_str}` results file in repository folders.")
     uploaded_file = st.file_uploader(f"📂 Please upload your {year_str} Selection Spreadsheet (.xlsx or .csv)", type=['xlsx', 'csv'], key=f"uploader_{year_str}")
     if uploaded_file is not None:
         if uploaded_file.name.endswith('.xlsx'):
