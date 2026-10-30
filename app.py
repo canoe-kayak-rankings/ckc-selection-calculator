@@ -6,7 +6,7 @@ import re
 
 st.set_page_config(
     page_title="CKC National Team Selection Calculator",
-    page_icon="🇨🇦",
+    page_icon=" ",
     layout="wide"
 )
 
