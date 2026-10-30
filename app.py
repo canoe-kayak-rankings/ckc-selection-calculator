@@ -293,7 +293,7 @@ def run_selection_calculator(comp_year_int):
             sub_df['RANK'] = range(1, len(sub_df)+1)
             processed_rankings[evt][c_name] = sub_df
 
-    st.markdown(f"### 📊 {year_str} 4-Boat Base Score Breakdown (Open Series)")
+    st.markdown(f"### {year_str} 4-Boat Base Score Breakdown (Open Selection Races)")
     open_b_data = []
     for rc in open_race_cols:
         bv = base_scores.get(rc, np.nan)
@@ -305,7 +305,7 @@ def run_selection_calculator(comp_year_int):
         open_b_data.append(row)
     st.dataframe(pd.DataFrame(open_b_data), hide_index=True, use_container_width=True)
 
-    st.markdown(f"### 📊 {year_str} 4-Boat Base Score Breakdown (U23 / U18 Series)")
+    st.markdown(f"### {year_str} 4-Boat Base Score Breakdown (U23 / U18 Selection Races)")
     u23_b_data = []
     for rc in u23_race_cols:
         bv = base_scores.get(rc, np.nan)
