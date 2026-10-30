@@ -112,7 +112,7 @@ def load_mps_standards(target_file):
 # ==========================================
 def run_2026():
     st.title("🇨🇦 Canoe Kayak Canada - 2026 National Team Selection Calculator")
-    st.markdown("2026 Season: Best 3 of 5 races, 50s penalty fallback handling, and age category standings.")
+    st.markdown("2026 Season: Best 3 of 5 races, strict 50s penalty exclusion for base scores, and age category standings.")
 
     df_raw, target_file = load_data_source("2026")
     if df_raw is None:
@@ -178,14 +178,16 @@ def run_2026():
                     if pd.notna(t) and t < 900:
                         rec = {'athlete': r.get('ATHLETE', 'Unknown'), 'time': t, 'race_col': rc}
                         val_recs.append(rec)
-                        if not has_50s_penalty(r, rc, df_all.columns): clean_recs.append(rec)
+                        if not has_50s_penalty(r, rc, df_all.columns): 
+                            clean_recs.append(rec)
             if clean_recs:
                 clean_recs.sort(key=lambda x: x['time'])
                 disc_best[d] = clean_recs[0]
             elif val_recs:
                 val_recs.sort(key=lambda x: x['time'])
                 disc_best[d] = val_recs[0]
-            else: disc_best[d] = None
+            else: 
+                disc_best[d] = None
         times = [v['time'] for v in disc_best.values() if v is not None]
         return round(sum(times) / len(times), 2) if len(times) == 4 else np.nan, disc_best
 
@@ -270,6 +272,7 @@ def run_2026():
                             if pd.notna(pps_v):
                                 ppss.append(pps_v)
                                 if pps_v <= cat_mps: sat += 1
+                        # Best 3 of 5 races calculation for 2026
                         best_p = sorted(pts)[:3]
                         tot_pts.append(int(round(sum(best_p))) if any(p < 900 for p in best_p) else 999)
                         best_pps = sorted(ppss)[:3]
@@ -277,14 +280,14 @@ def run_2026():
                         mps_cnt.append(sat)
                         
                     sub_df['TOTAL_POINTS'] = tot_pts
-                    sub_df['AVG_BEST4_PPS'] = avg_pps
+                    sub_df['AVG_BEST3_PPS'] = avg_pps  # Best 3 average PPS
                     sub_df['MPS_SATISFIED_COUNT'] = mps_cnt
-                    sub_df = sub_df.sort_values(by=['TOTAL_POINTS', 'AVG_BEST4_PPS']).reset_index(drop=True)
+                    sub_df = sub_df.sort_values(by=['TOTAL_POINTS', 'AVG_BEST3_PPS']).reset_index(drop=True)
                     sub_df['RANK'] = range(1, len(sub_df)+1)
                     processed_rankings[evt][c_name] = sub_df
                     
                     pps_cols = [f"{rc}_PPS" for rc in active_race_cols if f"{rc}_PPS" in sub_df.columns]
-                    disp_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST4_PPS'] + active_race_cols + pps_cols
+                    disp_cols = ['RANK', 'ATHLETE', 'EVENT', 'YOB', 'PROVINCE', 'TOTAL_POINTS', 'MPS_SATISFIED_COUNT', 'AVG_BEST3_PPS'] + active_race_cols + pps_cols
                     available_disp = [c for c in disp_cols if c in sub_df.columns]
                     
                     def highlight_mps(val):
@@ -297,7 +300,7 @@ def run_2026():
                         return ''
 
                     pps_subset = [c for c in pps_cols if c in available_disp]
-                    fmt_map = {col: safe_fmt for col in active_race_cols + pps_subset + ['AVG_BEST4_PPS']}
+                    fmt_map = {col: safe_fmt for col in active_race_cols + pps_subset + ['AVG_BEST3_PPS']}
                     
                     styled_df = sub_df[available_disp].style.map(
                         highlight_mps, 
@@ -322,17 +325,17 @@ def run_2026():
                             for _, row in u23_nominees.iterrows():
                                 is_ov = row['ATHLETE'] in valid_u18
                                 tag = " *(Also selected to Junior/U18 team)*" if is_ov else ""
-                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST4_PPS'])}%{tag}")
+                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST3_PPS'])}%{tag}")
                             
                             if overlap:
                                 rem_pool = valid_u23_pool[~valid_u23_pool['ATHLETE'].isin(nom_names)]
                                 if not rem_pool.empty:
                                     alt = rem_pool.iloc[0]
                                     st.markdown(f"**🔄 U23 Team Alternate (Activated due to Junior team double-qualification):**")
-                                    st.write(f"- **{alt['ATHLETE']}** ({alt['PROVINCE']}) | Points: {alt['TOTAL_POINTS']} | MPS Satisfied: {alt['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(alt['AVG_BEST4_PPS'])}%")
+                                    st.write(f"- **{alt['ATHLETE']}** ({alt['PROVINCE']}) | Points: {alt['TOTAL_POINTS']} | MPS Satisfied: {alt['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(alt['AVG_BEST3_PPS'])}%")
                         else:
                             for _, row in valid_nominees.iterrows():
-                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST4_PPS'])}%")
+                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST3_PPS'])}")
                     else:
                         st.info("No athletes in this category met the minimum MPS satisfaction requirement for nomination.")
 
@@ -622,7 +625,7 @@ def run_2027():
                                     st.write(f"- **{alt['ATHLETE']}** ({alt['PROVINCE']}) | Points: {alt['TOTAL_POINTS']} | MPS Satisfied: {alt['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(alt['AVG_BEST4_PPS'])}%")
                         else:
                             for _, row in valid_nominees.iterrows():
-                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST4_PPS'])}%")
+                                st.write(f"- **{row['RANK']}. {row['ATHLETE']}** ({row['PROVINCE']}) | Points: {row['TOTAL_POINTS']} | MPS Satisfied: {row['MPS_SATISFIED_COUNT']} | Avg PPS: {safe_fmt(row['AVG_BEST4_PPS'])}")
                     else:
                         st.info("No athletes in this category met the minimum MPS satisfaction requirement for nomination.")
 
